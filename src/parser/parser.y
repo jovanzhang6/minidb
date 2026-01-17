@@ -612,6 +612,18 @@ table_ref:
         }
         delete $1;
     }
+    | LPAREN select_stmt RPAREN opt_alias {
+        $$ = new TableRef();
+        $$->subquery.reset($2);
+        if ($4) {
+            $$->alias = *$4;
+            delete $4;
+        } else {
+             // 自动别名，或者留空？为了兼容性最好要求别名
+             // 但标准SQL里有些数据库允许无别名，有些必须有
+             // 这里暂时允许无别名
+        }
+    }
     ;
 
 opt_join_list:

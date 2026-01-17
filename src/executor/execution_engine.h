@@ -81,6 +81,7 @@ private:
     
     // Helpers
     std::unique_ptr<Operator> BuildExecutionPlan(const SelectStmt& stmt, ExecutorContext* ctx);
+    std::unique_ptr<Operator> BuildTableRefOperator(const TableRef& table_ref, ExecutorContext* ctx);
     std::unique_ptr<Expression> ConvertExpression(const Expression& ast_expr, const OutputSchema* schema);
 };
 
