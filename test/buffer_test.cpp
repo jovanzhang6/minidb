@@ -41,7 +41,7 @@ TEST(basic_fetch_unpin) {
     page_id_t page_id;
     char* page = bpm.NewPage(&page_id);
     assert(page != nullptr);
-    assert(page_id == 2);  // Page 1 is the header page
+    assert(page_id == 1);  // First user page is page 1
     
     // Write some data
     const char* test_str = "Hello, Buffer Pool!";

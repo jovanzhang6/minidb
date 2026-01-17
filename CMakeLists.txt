@@ -76,3 +76,8 @@ add_test(NAME RecordTest COMMAND record_test)
 add_executable(btree_test test/btree_test.cpp)
 target_link_libraries(btree_test minidb_core)
 add_test(NAME BTreeTest COMMAND btree_test)
+
+# Catalog测试
+add_executable(catalog_test test/catalog_test.cpp)
+target_link_libraries(catalog_test minidb_core)
+add_test(NAME CatalogTest COMMAND catalog_test)

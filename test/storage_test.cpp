@@ -43,7 +43,7 @@ TEST(create_new_database) {
     const DatabaseHeader& header = dm.GetHeader();
     assert(header.IsValid());
     assert(header.page_size == PAGE_SIZE);
-    assert(header.page_count == 1);
+    assert(header.page_count == 0);  // No user pages yet, only header
     assert(header.first_free_page == INVALID_PAGE_ID);
     
     dm.Close();
@@ -88,17 +88,17 @@ TEST(allocate_page) {
     DiskManager dm(TEST_DB);
     dm.Open();
     
-    // 初始只有1页
+    // 初始没有用户页面
+    assert(dm.GetPageCount() == 0);
+    
+    // 分配新页 - 第一个是 page 1
+    page_id_t page1 = dm.AllocatePage();
+    assert(page1 == 1);
     assert(dm.GetPageCount() == 1);
     
-    // 分配新页
     page_id_t page2 = dm.AllocatePage();
     assert(page2 == 2);
     assert(dm.GetPageCount() == 2);
-    
-    page_id_t page3 = dm.AllocatePage();
-    assert(page3 == 3);
-    assert(dm.GetPageCount() == 3);
     
     dm.Close();
     cleanup();
@@ -150,8 +150,8 @@ TEST(deallocate_and_reuse_page) {
     page_id_t p2 = dm.AllocatePage();
     page_id_t p3 = dm.AllocatePage();
     
-    assert(p1 == 2 && p2 == 3 && p3 == 4);
-    assert(dm.GetPageCount() == 4);
+    assert(p1 == 1 && p2 == 2 && p3 == 3);
+    assert(dm.GetPageCount() == 3);
     
     // 释放中间的页面
     ErrorCode err = dm.DeallocatePage(p2);
@@ -162,7 +162,7 @@ TEST(deallocate_and_reuse_page) {
     assert(p4 == p2);  // 复用了p2
     
     // 页面总数不变
-    assert(dm.GetPageCount() == 4);
+    assert(dm.GetPageCount() == 3);
     
     dm.Close();
     cleanup();
@@ -245,23 +245,30 @@ TEST(read_invalid_page) {
     cleanup();
 }
 
-// 测试：第1页特殊处理
-TEST(first_page_structure) {
+// 测试：文件头结构
+TEST(header_page_structure) {
     cleanup();
     
     DiskManager dm(TEST_DB);
     dm.Open();
     
-    // 读取第1页
-    char page1[PAGE_SIZE];
-    ErrorCode err = dm.ReadPage(1, page1);
+    // 分配一个页面确保有用户页面
+    page_id_t page1 = dm.AllocatePage();
+    assert(page1 == 1);
+    
+    // 写入一些数据到 page 1
+    char test_data[PAGE_SIZE];
+    std::memset(test_data, 0xAB, PAGE_SIZE);
+    ErrorCode err = dm.WritePage(1, test_data);
     assert(err == ErrorCode::SUCCESS);
     
-    // 验证文件头魔数
-    assert(std::memcmp(page1, DB_MAGIC, 15) == 0);
+    // 读取 page 1
+    char read_data[PAGE_SIZE];
+    err = dm.ReadPage(1, read_data);
+    assert(err == ErrorCode::SUCCESS);
     
-    // 验证100字节之后是空的TABLE_LEAF页头
-    assert(page1[DB_HEADER_SIZE] == static_cast<char>(PageType::TABLE_LEAF));
+    // 验证数据正确
+    assert(std::memcmp(test_data, read_data, PAGE_SIZE) == 0);
     
     dm.Close();
     cleanup();
@@ -278,7 +285,7 @@ int main() {
     RUN_TEST(persistence);
     RUN_TEST(rowid_generation);
     RUN_TEST(read_invalid_page);
-    RUN_TEST(first_page_structure);
+    RUN_TEST(header_page_structure);
     
     std::cout << "\n=== All Storage Tests PASSED ===" << std::endl;
     

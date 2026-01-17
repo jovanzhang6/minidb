@@ -84,7 +84,9 @@ private:
     ErrorCode AddPageToFreelist(page_id_t page_id);
     
     std::streamoff GetPageOffset(page_id_t page_id) const {
-        return static_cast<std::streamoff>(page_id - 1) * PAGE_SIZE;
+        // Page 1 starts at offset PAGE_SIZE (after the header page 0)
+        // page_id is 1-based for user pages
+        return static_cast<std::streamoff>(page_id) * PAGE_SIZE;
     }
 
 private:

@@ -79,13 +79,24 @@ my-db/
 - **Git提交**: `feat: btree table with insert/search/delete/update`
 - **备注**: 索引B-tree (`BTreeIndex`) 暂不实现，后续如需可扩展
 
-### Phase 5: 系统目录 ⬜
-- [ ] 实现 `Catalog` 类
-- [ ] `sys_schema` 系统表（表/索引元数据）
-- [ ] `sys_users` 用户表
-- [ ] `sys_privileges` 权限表
-- [ ] DDL操作支持
-- **Git提交**: `feat: catalog and DDL`
+### Phase 5: 系统目录 ✅
+- [x] 实现 `Catalog` 类
+- [x] `sys_tables` 系统表（表元数据：table_id, table_name, root_page, next_rowid）
+- [x] `sys_columns` 系统表（列定义：table_id, column_id, column_name, data_type, nullable, is_primary_key）
+- [x] `sys_users` 用户表（用户信息：user_id, username, password_hash, is_admin）
+- [x] `sys_privileges` 权限表（权限信息：user_id, table_id, privilege_type）
+- [x] DDL操作支持（CREATE/DROP TABLE, ADD/DROP/RENAME COLUMN）
+- [x] DCL操作支持（CREATE/DROP USER, GRANT/REVOKE）
+- [x] 编写 `catalog_test` 单元测试（10个测试用例）
+- **Git提交**: `feat: catalog system with DDL/DCL support`
+
+**页面组织设计**:
+- Page 0: 数据库文件头（4096字节，前100字节是header）
+- Page 1: sys_tables 根页
+- Page 2: sys_columns 根页  
+- Page 3: sys_users 根页
+- Page 4: sys_privileges 根页
+- Page 5+: 用户表数据页
 
 ### Phase 6: SQL解析器 ⬜
 - [ ] Flex词法规则定义

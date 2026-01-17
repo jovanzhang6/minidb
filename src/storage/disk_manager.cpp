@@ -50,20 +50,12 @@ ErrorCode DiskManager::Open() {
         }
         
         header_ = DatabaseHeader();
+        header_.page_count = 0;  // No user pages yet, only header page
         
+        // Write header to the first PAGE_SIZE bytes (page 0)
         char first_page[PAGE_SIZE];
         std::memset(first_page, 0, PAGE_SIZE);
         std::memcpy(first_page, &header_, sizeof(DatabaseHeader));
-        
-        // Initialize empty TABLE_LEAF page after header
-        first_page[DB_HEADER_SIZE] = static_cast<char>(PageType::TABLE_LEAF);
-        first_page[DB_HEADER_SIZE + 1] = 0;
-        first_page[DB_HEADER_SIZE + 2] = 0;
-        first_page[DB_HEADER_SIZE + 3] = 0;
-        first_page[DB_HEADER_SIZE + 4] = 0;
-        first_page[DB_HEADER_SIZE + 5] = 0;
-        first_page[DB_HEADER_SIZE + 6] = 0;
-        first_page[DB_HEADER_SIZE + 7] = 0;
         
         file_.seekp(0, std::ios::beg);
         file_.write(first_page, PAGE_SIZE);
