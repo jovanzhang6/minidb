@@ -30,15 +30,39 @@ cmake --build . --config Release
 ```bash
 ./minidb [database_file]
 ```
-如果提供了 `database_file` 参数，程序将直接打开该数据库。否则，您可以在 Shell 内部打开数据库。
+
+- **方式一：指定数据库文件（推荐）**
+  如果 `database_file` 指定的文件存在，MiniDB 将打开它；如果不存在，MiniDB 将**自动创建**并初始化一个新的数据库文件。
+  
+  示例：
+  ```bash
+  ./minidb new_db.db 
+  # 将自动创建 new_db.db 并进入 Shell
+  ```
+
+- **方式二：不指定参数**
+  如果您直接运行 `./minidb`，进入 Shell 后处于“无数据库”状态。您必须使用 `.open FILENAME` 命令来打开或创建数据库，否则无法执行 SQL 语句。
 
 ## 3. Shell 命令
 
 进入 Shell (`minidb> `) 后，您可以使用元命令（以 `.` 开头）或执行 SQL 语句（以 `;` 结尾）。
 
+### 常用操作流程示例
+
+**从零开始创建数据库：**
+```text
+minidb> .open my_data.db
+Initializing new database...
+Database opened: my_data.db
+minidb> CREATE TABLE t1 (a INT);
+Table created successfully
+minidb> INSERT INTO t1 VALUES (10);
+...
+```
+
 ### 元命令 (Meta-commands)
 - `.help`: 显示帮助信息。
-- `.open FILENAME`: 打开（或创建）一个数据库文件。
+- `.open FILENAME`: 打开数据库。如果文件名不存在，则自动创建一个新的空数据库。
 - `.close`: 关闭当前数据库。
 - `.tables`: 列出当前数据库中的所有表。
 - `.schema`: 显示所有表的模式信息（待实现）。
