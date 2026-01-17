@@ -81,6 +81,8 @@ enum class ErrorCode : int {
     PERMISSION_DENIED = -12,
     TXN_ABORT = -13,
     CORRUPTED_DATA = -14,
+    TRANSACTION_IN_PROGRESS = -15,  // 已有活动事务
+    NO_TRANSACTION = -16,           // 无活动事务
 };
 
 // Value class: stores a single field value

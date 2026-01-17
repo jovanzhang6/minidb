@@ -125,12 +125,20 @@ my-db/
 - **Git提交**: `feat: Phase 7 - Executor Framework with Volcano Model`
 - **备注**: IndexScan 暂未实现，待后续索引功能完善后添加
 
-### Phase 8: 事务与日志 ⬜
-- [ ] 实现 `LogManager` 回滚日志
-- [ ] 实现 `TransactionManager`
-- [ ] BEGIN/COMMIT/ROLLBACK 支持
-- [ ] 崩溃恢复
-- **Git提交**: `feat: transaction and rollback journal`
+### Phase 8: 事务与日志 ✅
+- [x] 实现 `JournalHeader` 日志头格式（魔数、页数、校验和）
+- [x] 实现 `LogManager` 回滚日志管理器
+  - 事务开始时创建日志文件
+  - 写前记录原始页面内容
+  - 提交时删除日志
+  - 回滚时从日志恢复
+- [x] 实现 `TransactionManager` 事务管理器
+  - BEGIN/COMMIT/ROLLBACK 支持
+  - 与 BufferPoolManager 和 DiskManager 协调
+- [x] 实现 `AutoTransaction` RAII封装
+- [x] 崩溃恢复机制（检测并回放未完成事务的日志）
+- [x] 编写 `txn_test` 单元测试（9个测试用例）
+- **Git提交**: `feat: Phase 8 - Transaction and Rollback Journal`
 
 ### Phase 9: 命令行Shell ⬜
 - [ ] REPL主循环
