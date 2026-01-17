@@ -62,6 +62,11 @@ add_executable(buffer_test test/buffer_test.cpp)
 target_link_libraries(buffer_test minidb_core)
 add_test(NAME BufferTest COMMAND buffer_test)
 
+# 页面布局测试
+add_executable(page_test test/page_test.cpp)
+target_link_libraries(page_test minidb_core)
+add_test(NAME PageTest COMMAND page_test)
+
 # 记录格式测试
 add_executable(record_test test/record_test.cpp)
 target_link_libraries(record_test minidb_core)
