@@ -161,6 +161,11 @@ add_executable(parser_test test/parser_test.cpp)
 target_link_libraries(parser_test minidb_parser minidb_core)
 add_test(NAME ParserTest COMMAND parser_test)
 
+# Executor测试
+add_executable(executor_test test/executor_test.cpp)
+target_link_libraries(executor_test minidb_parser minidb_core)
+add_test(NAME ExecutorTest COMMAND executor_test)
+
 # 集成测试（演示底层功能）
 add_executable(integration_test test/integration_test.cpp)
 target_link_libraries(integration_test minidb_core)

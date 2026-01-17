@@ -430,9 +430,12 @@ struct DropUserStmt {
 };
 
 /**
- * @brief 权限类型
+ * @brief 权限类型（用于AST解析）
+ * 
+ * 注意：与 catalog.h 中的 PrivilegeType 区分，
+ * AST版本用于解析阶段
  */
-enum class PrivilegeType {
+enum class AstPrivilegeType {
     SELECT,
     INSERT,
     UPDATE,
@@ -444,7 +447,7 @@ enum class PrivilegeType {
  * @brief GRANT语句
  */
 struct GrantStmt {
-    std::vector<PrivilegeType> privileges;
+    std::vector<AstPrivilegeType> privileges;
     std::string table_name;  // ON table
     std::string username;    // TO user
 };
@@ -453,7 +456,7 @@ struct GrantStmt {
  * @brief REVOKE语句
  */
 struct RevokeStmt {
-    std::vector<PrivilegeType> privileges;
+    std::vector<AstPrivilegeType> privileges;
     std::string table_name;  // ON table
     std::string username;    // FROM user
 };

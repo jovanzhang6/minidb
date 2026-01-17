@@ -86,7 +86,7 @@ private:
     // DCL解析
     std::unique_ptr<Statement> ParseGrant();
     std::unique_ptr<Statement> ParseRevoke();
-    std::vector<PrivilegeType> ParsePrivilegeList();
+    std::vector<AstPrivilegeType> ParsePrivilegeList();
     
     // TCL解析
     std::unique_ptr<Statement> ParseBegin();

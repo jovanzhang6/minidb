@@ -98,23 +98,32 @@ my-db/
 - Page 4: sys_privileges 根页
 - Page 5+: 用户表数据页
 
-### Phase 6: SQL解析器 ⬜
-- [ ] Flex词法规则定义
-- [ ] Bison语法规则定义
-- [ ] AST节点类型定义
-- [ ] DDL/DML/DCL/SELECT语句支持
-- **Git提交**: `feat: flex/bison SQL parser`
+### Phase 6: SQL解析器 ✅
+- [x] Flex词法规则定义（lexer.l）
+- [x] Bison语法规则定义（parser.y, 1275行完整SQL语法）
+- [x] AST节点类型定义（ast.h/ast.cpp）
+- [x] DDL/DML/DCL/SELECT语句支持
+- [x] 表达式解析（算术、比较、逻辑、LIKE、IN、BETWEEN、IS NULL）
+- [x] 聚合函数（COUNT、SUM、AVG、MIN、MAX）
+- [x] JOIN支持（INNER、LEFT、RIGHT、FULL、CROSS）
+- [x] Parser封装类
+- [x] 编写 `parser_test` 单元测试（42个测试用例）
+- **Git提交**: `feat: Phase 6 - SQL Parser with Flex/Bison`
 
-### Phase 7: 执行器框架 ⬜
-- [ ] 定义 `Operator` 迭代器接口
-- [ ] `SeqScan` 全表扫描
-- [ ] `IndexScan` 索引扫描
-- [ ] `Filter` 条件过滤
-- [ ] `Project` 投影
-- [ ] `Sort` 排序
-- [ ] `HashAggregate` 聚合
-- [ ] `NestedLoopJoin` 连接
-- **Git提交**: `feat: executor operators`
+### Phase 7: 执行器框架 ✅
+- [x] 定义 `Operator` 迭代器接口（Volcano模型：Init/Next/Close）
+- [x] 定义 `Tuple` 元组类型（values + rowid）
+- [x] 定义 `OutputSchema` 输出模式
+- [x] 实现 `ExpressionEvaluator` 表达式求值器
+- [x] `SeqScan` 全表扫描
+- [x] `Filter` 条件过滤
+- [x] `Project` 投影与表达式计算
+- [x] `Sort` 排序（支持多列、ASC/DESC）
+- [x] `HashAggregate` 聚合（COUNT, SUM, AVG, MIN, MAX）
+- [x] `NestedLoopJoin` 连接（INNER, LEFT, RIGHT, FULL, CROSS）
+- [x] 编写 `executor_test` 单元测试（20个测试用例）
+- **Git提交**: `feat: Phase 7 - Executor Framework with Volcano Model`
+- **备注**: IndexScan 暂未实现，待后续索引功能完善后添加
 
 ### Phase 8: 事务与日志 ⬜
 - [ ] 实现 `LogManager` 回滚日志

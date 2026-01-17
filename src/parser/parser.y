@@ -84,13 +84,13 @@ using namespace minidb;
     std::vector<std::string>* str_list;
     std::vector<minidb::Expression*>* expr_list;
     std::vector<std::vector<minidb::Expression*>>* values_list;
-    std::vector<minidb::PrivilegeType>* priv_list;
+    std::vector<minidb::AstPrivilegeType>* priv_list;
     
     minidb::DataType data_type;
     minidb::BinaryOpType binary_op;
     minidb::JoinType join_type;
     minidb::AlterType alter_type;
-    minidb::PrivilegeType priv_type;
+    minidb::AstPrivilegeType priv_type;
     
     bool bool_val;
 }
@@ -785,7 +785,7 @@ revoke_stmt:
 
 privilege_list:
     privilege {
-        $$ = new std::vector<PrivilegeType>();
+        $$ = new std::vector<AstPrivilegeType>();
         $$->push_back($1);
     }
     | privilege_list COMMA privilege {
@@ -795,11 +795,11 @@ privilege_list:
     ;
 
 privilege:
-    SELECT      { $$ = PrivilegeType::SELECT; }
-    | INSERT    { $$ = PrivilegeType::INSERT; }
-    | UPDATE    { $$ = PrivilegeType::UPDATE; }
-    | DELETE    { $$ = PrivilegeType::DELETE_PRIV; }
-    | ALL       { $$ = PrivilegeType::ALL; }
+    SELECT      { $$ = AstPrivilegeType::SELECT; }
+    | INSERT    { $$ = AstPrivilegeType::INSERT; }
+    | UPDATE    { $$ = AstPrivilegeType::UPDATE; }
+    | DELETE    { $$ = AstPrivilegeType::DELETE_PRIV; }
+    | ALL       { $$ = AstPrivilegeType::ALL; }
     ;
 
 /* ============================================================================

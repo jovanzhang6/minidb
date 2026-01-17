@@ -350,11 +350,11 @@ void PrintAST(const Statement* stmt, int indent) {
             for (size_t i = 0; i < grant.privileges.size(); i++) {
                 if (i > 0) std::cout << ", ";
                 switch (grant.privileges[i]) {
-                    case PrivilegeType::SELECT: std::cout << "SELECT"; break;
-                    case PrivilegeType::INSERT: std::cout << "INSERT"; break;
-                    case PrivilegeType::UPDATE: std::cout << "UPDATE"; break;
-                    case PrivilegeType::DELETE_PRIV: std::cout << "DELETE"; break;
-                    case PrivilegeType::ALL: std::cout << "ALL"; break;
+                    case AstPrivilegeType::SELECT: std::cout << "SELECT"; break;
+                    case AstPrivilegeType::INSERT: std::cout << "INSERT"; break;
+                    case AstPrivilegeType::UPDATE: std::cout << "UPDATE"; break;
+                    case AstPrivilegeType::DELETE_PRIV: std::cout << "DELETE"; break;
+                    case AstPrivilegeType::ALL: std::cout << "ALL"; break;
                 }
             }
             std::cout << std::endl;
@@ -372,11 +372,11 @@ void PrintAST(const Statement* stmt, int indent) {
             for (size_t i = 0; i < revoke.privileges.size(); i++) {
                 if (i > 0) std::cout << ", ";
                 switch (revoke.privileges[i]) {
-                    case PrivilegeType::SELECT: std::cout << "SELECT"; break;
-                    case PrivilegeType::INSERT: std::cout << "INSERT"; break;
-                    case PrivilegeType::UPDATE: std::cout << "UPDATE"; break;
-                    case PrivilegeType::DELETE_PRIV: std::cout << "DELETE"; break;
-                    case PrivilegeType::ALL: std::cout << "ALL"; break;
+                    case AstPrivilegeType::SELECT: std::cout << "SELECT"; break;
+                    case AstPrivilegeType::INSERT: std::cout << "INSERT"; break;
+                    case AstPrivilegeType::UPDATE: std::cout << "UPDATE"; break;
+                    case AstPrivilegeType::DELETE_PRIV: std::cout << "DELETE"; break;
+                    case AstPrivilegeType::ALL: std::cout << "ALL"; break;
                 }
             }
             std::cout << std::endl;
