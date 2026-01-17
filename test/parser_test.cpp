@@ -412,7 +412,7 @@ TEST(TestRevoke) {
     
     ASSERT_EQ(stmt->type, StmtType::REVOKE);
     const auto& revoke = std::get<RevokeStmt>(stmt->data);
-    ASSERT_EQ(revoke.privileges[0], PrivilegeType::DELETE_PRIV);
+    ASSERT_EQ(revoke.privileges[0], AstPrivilegeType::DELETE_PRIV);
 }
 
 // ============================================================================
