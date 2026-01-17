@@ -295,6 +295,7 @@ ExecutionResult ExecutionEngine::ExecuteInsert(const InsertStmt& stmt) {
     }
     
     auto table = catalog_->GetBTreeTable(stmt.table_name);
+    if (txn_mgr_) table->SetTransactionManager(txn_mgr_);
     auto schema = catalog_->GetTableSchema(stmt.table_name);
     
     int count = 0;
@@ -378,6 +379,7 @@ ExecutionResult ExecutionEngine::ExecuteDelete(const DeleteStmt& stmt) {
     }
     
     auto table = catalog_->GetBTreeTable(stmt.table_name);
+    if (txn_mgr_) table->SetTransactionManager(txn_mgr_);
     auto schema_opt = catalog_->GetTableSchema(stmt.table_name);
     if (!schema_opt) return ExecutionResult::Fail("Schema not found");
     const auto& schema = *schema_opt;
@@ -429,6 +431,7 @@ ExecutionResult ExecutionEngine::ExecuteUpdate(const UpdateStmt& stmt) {
     }
     
     auto table = catalog_->GetBTreeTable(stmt.table_name);
+    if (txn_mgr_) table->SetTransactionManager(txn_mgr_);
     auto schema_opt = catalog_->GetTableSchema(stmt.table_name);
     if (!schema_opt) return ExecutionResult::Fail("Schema not found");
     const auto& schema = *schema_opt;

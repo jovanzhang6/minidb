@@ -115,9 +115,11 @@ ErrorCode TransactionManager::LogBeforePageWrite(page_id_t page_id,
     
     // 检查页面是否已记录
     if (log_manager_.IsPageLogged(page_id)) {
+         // std::cerr << "DEBUG: Page " << page_id << " already logged" << std::endl;
         return ErrorCode::SUCCESS;
     }
     
+    // std::cerr << "DEBUG: Logging page " << page_id << std::endl;
     return log_manager_.LogPageWrite(page_id, original_data);
 }
 

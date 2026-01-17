@@ -5,6 +5,7 @@
 
 #include "btree_table.h"
 #include "../common/config.h"
+#include "../txn/transaction_manager.h"
 #include <algorithm>
 #include <cstring>
 
@@ -197,6 +198,11 @@ bool BTreeTable::InsertIntoLeaf(page_id_t leaf_page_id, rowid_t rowid,
     auto* page_data = ToUint8(bpm_->FetchPage(leaf_page_id));
     if (!page_data) return false;
     
+    // Log before write
+    if (txn_mgr_) {
+        txn_mgr_->LogBeforePageWrite(leaf_page_id, reinterpret_cast<char*>(page_data));
+    }
+
     TableLeafPage leaf(page_data, leaf_page_id);
     
     // Check for duplicate
@@ -220,6 +226,12 @@ bool BTreeTable::InsertIntoLeaf(page_id_t leaf_page_id, rowid_t rowid,
     page_id_t target_page = (rowid < separator) ? leaf_page_id : new_page_id;
     
     page_data = ToUint8(bpm_->FetchPage(target_page));
+    
+    // Log target page (it might be the old leaf or the new one)
+    if (txn_mgr_) {
+        txn_mgr_->LogBeforePageWrite(target_page, reinterpret_cast<char*>(page_data));
+    }
+
     TableLeafPage target_leaf(page_data, target_page);
     bool success = target_leaf.InsertCell(rowid, record);
     bpm_->UnpinPage(target_page, true);
@@ -240,6 +252,12 @@ std::pair<rowid_t, page_id_t> BTreeTable::SplitLeafPage(
     auto* old_data = ToUint8(bpm_->FetchPage(page_id));
     auto* new_data = ToUint8(raw_new_page);
     
+    // Log before write
+    if (txn_mgr_) {
+        txn_mgr_->LogBeforePageWrite(page_id, reinterpret_cast<char*>(old_data));
+        txn_mgr_->LogBeforePageWrite(new_page_id, reinterpret_cast<char*>(new_data));
+    }
+
     TableLeafPage old_page(old_data, page_id);
     TableLeafPage new_page(new_data, new_page_id);
     new_page.Init();
@@ -312,6 +330,9 @@ void BTreeTable::InsertIntoInterior(page_id_t page_id, rowid_t key,
     // And insert new cell with key and left_child pointing to old position
     
     if (interior.HasSpace()) {
+        if (txn_mgr_) {
+             txn_mgr_->LogBeforePageWrite(page_id, reinterpret_cast<char*>(page_data));
+        }
         // Can insert without split
         interior.InsertCell(key, left_child);
         
@@ -370,6 +391,12 @@ std::pair<rowid_t, page_id_t> BTreeTable::SplitInteriorPage(
     
     auto* old_data = ToUint8(bpm_->FetchPage(page_id));
     auto* new_data = ToUint8(raw_new_page);
+
+    // Log before write
+    if (txn_mgr_) {
+        txn_mgr_->LogBeforePageWrite(page_id, reinterpret_cast<char*>(old_data));
+        txn_mgr_->LogBeforePageWrite(new_page_id, reinterpret_cast<char*>(new_data));
+    }
     
     TableInteriorPage old_page(old_data, page_id);
     TableInteriorPage new_page(new_data, new_page_id);
@@ -430,7 +457,10 @@ void BTreeTable::CreateNewRoot(rowid_t key, page_id_t left_child, page_id_t righ
     if (!raw_page || new_root_id == INVALID_PAGE_ID) {
         throw std::runtime_error("Failed to allocate new root page");
     }
-    
+    // Log before write
+    if (txn_mgr_) {
+        txn_mgr_->LogBeforePageWrite(new_root_id, raw_page);
+    }    
     auto* page_data = ToUint8(raw_page);
     TableInteriorPage new_root(page_data, new_root_id);
     new_root.Init();
@@ -449,6 +479,10 @@ bool BTreeTable::Delete(rowid_t rowid) {
     auto* page_data = ToUint8(bpm_->FetchPage(leaf_id));
     if (!page_data) return false;
     
+    if (txn_mgr_) {
+        txn_mgr_->LogBeforePageWrite(leaf_id, reinterpret_cast<char*>(page_data));
+    }
+
     TableLeafPage leaf(page_data, leaf_id);
     bool deleted = leaf.DeleteCell(rowid);
     
@@ -484,6 +518,10 @@ bool BTreeTable::Update(rowid_t rowid, const Record& record) {
     auto* page_data = ToUint8(bpm_->FetchPage(leaf_id));
     if (!page_data) return false;
     
+    if (txn_mgr_) {
+        txn_mgr_->LogBeforePageWrite(leaf_id, reinterpret_cast<char*>(page_data));
+    }
+
     TableLeafPage leaf(page_data, leaf_id);
     bool updated = leaf.UpdateRecord(rowid, record);
     

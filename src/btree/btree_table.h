@@ -19,6 +19,8 @@
 
 namespace minidb {
 
+class TransactionManager; // Forward declaration
+
 /**
  * @brief Iterator for scanning B+tree table
  */
@@ -153,10 +155,16 @@ public:
      */
     rowid_t InsertAuto(const Record& record);
 
+    /**
+     * @brief Set transaction manager for logging
+     */
+    void SetTransactionManager(TransactionManager* txn_mgr) { txn_mgr_ = txn_mgr; }
+
 private:
     BufferPoolManager* bpm_;
     page_id_t root_page_id_;
     rowid_t next_rowid_ = 1;
+    TransactionManager* txn_mgr_ = nullptr;
     
     // =====================
     // Internal Operations
