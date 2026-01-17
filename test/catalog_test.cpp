@@ -1,17 +1,29 @@
 /**
  * @file catalog_test.cpp
  * @brief Unit tests for Catalog system
+ * 
+ * NOTE: Using a custom REQUIRE macro instead of assert() to ensure
+ * function calls with side effects are executed even in Release mode
+ * where NDEBUG disables standard assert().
  */
 
 #include "../src/storage/disk_manager.h"
 #include "../src/buffer/buffer_pool_manager.h"
 #include "../src/catalog/catalog.h"
-#include <cassert>
 #include <iostream>
 #include <filesystem>
 #include <cstdio>
+#include <stdexcept>
 
 using namespace minidb;
+
+// Custom assertion macro that works in both Debug and Release modes
+#define REQUIRE(expr) \
+    do { \
+        if (!(expr)) { \
+            throw std::runtime_error("Assertion failed: " #expr); \
+        } \
+    } while(0)
 
 class CatalogTest {
 public:
@@ -50,22 +62,24 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
             
-            assert(catalog.Initialize(true) == ErrorCode::SUCCESS);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Verify default admin user exists
             auto admin = catalog.GetUserInfo("admin");
-            assert(admin.has_value());
-            assert(admin->username == "admin");
-            assert(admin->is_admin == true);
+            REQUIRE(admin.has_value());
+            REQUIRE(admin->username == "admin");
+            REQUIRE(admin->is_admin == true);
             
             // No tables should exist initially
             auto tables = catalog.GetAllTableNames();
-            assert(tables.empty());
+            REQUIRE(tables.empty());
             
             bpm.FlushAllPages();
         }
@@ -83,11 +97,13 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Create a table
             std::vector<ColumnDef> columns = {
@@ -97,25 +113,27 @@ private:
             };
             
             int64_t table_id = catalog.CreateTable("test_table", columns);
-            assert(table_id > 0);
+            REQUIRE(table_id > 0);
             
             // Verify table exists
-            assert(catalog.TableExists("test_table"));
+            REQUIRE(catalog.TableExists("test_table"));
             
             auto tables = catalog.GetAllTableNames();
-            assert(tables.size() == 1);
-            assert(tables[0] == "test_table");
+            REQUIRE(tables.size() == 1);
+            REQUIRE(tables[0] == "test_table");
             
             // Try to create duplicate
             int64_t dup_id = catalog.CreateTable("test_table", columns);
-            assert(dup_id == static_cast<int64_t>(ErrorCode::DUPLICATE_KEY));
+            REQUIRE(dup_id == static_cast<int64_t>(ErrorCode::DUPLICATE_KEY));
             
             // Drop the table
-            assert(catalog.DropTable("test_table") == ErrorCode::SUCCESS);
-            assert(!catalog.TableExists("test_table"));
+            err = catalog.DropTable("test_table");
+            REQUIRE(err == ErrorCode::SUCCESS);
+            REQUIRE(!catalog.TableExists("test_table"));
             
             // Try to drop non-existent table
-            assert(catalog.DropTable("nonexistent") == ErrorCode::TABLE_NOT_FOUND);
+            err = catalog.DropTable("nonexistent");
+            REQUIRE(err == ErrorCode::TABLE_NOT_FOUND);
             
             bpm.FlushAllPages();
         }
@@ -133,11 +151,13 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             std::vector<ColumnDef> columns = {
                 {"id", DataType::INT, false, true},
@@ -145,29 +165,30 @@ private:
                 {"score", DataType::FLOAT, true, false}
             };
             
-            catalog.CreateTable("users", columns);
+            int64_t tid = catalog.CreateTable("users", columns);
+            REQUIRE(tid > 0);
             
             auto schema = catalog.GetTableSchema("users");
-            assert(schema.has_value());
-            assert(schema->table_name == "users");
-            assert(schema->columns.size() == 3);
+            REQUIRE(schema.has_value());
+            REQUIRE(schema->table_name == "users");
+            REQUIRE(schema->columns.size() == 3);
             
             // Check column details
-            assert(schema->columns[0].name == "id");
-            assert(schema->columns[0].type == DataType::INT);
-            assert(schema->columns[0].primary_key == true);
-            assert(schema->columns[0].nullable == false);
+            REQUIRE(schema->columns[0].name == "id");
+            REQUIRE(schema->columns[0].type == DataType::INT);
+            REQUIRE(schema->columns[0].primary_key == true);
+            REQUIRE(schema->columns[0].nullable == false);
             
-            assert(schema->columns[1].name == "username");
-            assert(schema->columns[1].type == DataType::TEXT);
+            REQUIRE(schema->columns[1].name == "username");
+            REQUIRE(schema->columns[1].type == DataType::TEXT);
             
-            assert(schema->columns[2].name == "score");
-            assert(schema->columns[2].type == DataType::FLOAT);
-            assert(schema->columns[2].nullable == true);
+            REQUIRE(schema->columns[2].name == "score");
+            REQUIRE(schema->columns[2].type == DataType::FLOAT);
+            REQUIRE(schema->columns[2].nullable == true);
             
             // Non-existent table
             auto no_schema = catalog.GetTableSchema("nonexistent");
-            assert(!no_schema.has_value());
+            REQUIRE(!no_schema.has_value());
             
             bpm.FlushAllPages();
         }
@@ -185,42 +206,51 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             std::vector<ColumnDef> columns = {
                 {"id", DataType::INT, false, true},
                 {"name", DataType::TEXT, true, false}
             };
             
-            catalog.CreateTable("products", columns);
+            int64_t tid = catalog.CreateTable("products", columns);
+            REQUIRE(tid > 0);
             
             // Add column
             ColumnDef new_col{"price", DataType::FLOAT, true, false};
-            assert(catalog.AddColumn("products", new_col) == ErrorCode::SUCCESS);
+            err = catalog.AddColumn("products", new_col);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             auto schema = catalog.GetTableSchema("products");
-            assert(schema->columns.size() == 3);
-            assert(schema->columns[2].name == "price");
+            REQUIRE(schema->columns.size() == 3);
+            REQUIRE(schema->columns[2].name == "price");
             
             // Rename column
-            assert(catalog.RenameColumn("products", "price", "unit_price") == ErrorCode::SUCCESS);
+            err = catalog.RenameColumn("products", "price", "unit_price");
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             schema = catalog.GetTableSchema("products");
-            assert(schema->columns[2].name == "unit_price");
+            REQUIRE(schema->columns[2].name == "unit_price");
             
             // Drop column
-            assert(catalog.DropColumn("products", "unit_price") == ErrorCode::SUCCESS);
+            err = catalog.DropColumn("products", "unit_price");
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             schema = catalog.GetTableSchema("products");
-            assert(schema->columns.size() == 2);
+            REQUIRE(schema->columns.size() == 2);
             
             // Error cases
-            assert(catalog.AddColumn("nonexistent", new_col) == ErrorCode::TABLE_NOT_FOUND);
-            assert(catalog.DropColumn("products", "nonexistent") == ErrorCode::COLUMN_NOT_FOUND);
+            err = catalog.AddColumn("nonexistent", new_col);
+            REQUIRE(err == ErrorCode::TABLE_NOT_FOUND);
+            
+            err = catalog.DropColumn("products", "nonexistent");
+            REQUIRE(err == ErrorCode::COLUMN_NOT_FOUND);
             
             bpm.FlushAllPages();
         }
@@ -238,35 +268,39 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Create user
             int64_t user_id = catalog.CreateUser("testuser", "password123", false);
-            assert(user_id > 0);
+            REQUIRE(user_id > 0);
             
             auto users = catalog.GetAllUserNames();
-            assert(users.size() == 2);  // admin + testuser
+            REQUIRE(users.size() == 2);  // admin + testuser
             
             // Verify user info
             auto user = catalog.GetUserInfo("testuser");
-            assert(user.has_value());
-            assert(user->username == "testuser");
-            assert(user->is_admin == false);
+            REQUIRE(user.has_value());
+            REQUIRE(user->username == "testuser");
+            REQUIRE(user->is_admin == false);
             
             // Duplicate user
             int64_t dup = catalog.CreateUser("testuser", "other", false);
-            assert(dup == static_cast<int64_t>(ErrorCode::DUPLICATE_KEY));
+            REQUIRE(dup == static_cast<int64_t>(ErrorCode::DUPLICATE_KEY));
             
             // Drop user
-            assert(catalog.DropUser("testuser") == ErrorCode::SUCCESS);
-            assert(!catalog.GetUserInfo("testuser").has_value());
+            err = catalog.DropUser("testuser");
+            REQUIRE(err == ErrorCode::SUCCESS);
+            REQUIRE(!catalog.GetUserInfo("testuser").has_value());
             
             // Drop non-existent user
-            assert(catalog.DropUser("nonexistent") == ErrorCode::KEY_NOT_FOUND);
+            err = catalog.DropUser("nonexistent");
+            REQUIRE(err == ErrorCode::KEY_NOT_FOUND);
             
             bpm.FlushAllPages();
         }
@@ -284,31 +318,34 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
-            catalog.CreateUser("alice", "alice_secret", false);
+            int64_t uid = catalog.CreateUser("alice", "alice_secret", false);
+            REQUIRE(uid > 0);
             
             // Correct authentication
             auto auth = catalog.AuthenticateUser("alice", "alice_secret");
-            assert(auth.has_value());
-            assert(auth->username == "alice");
+            REQUIRE(auth.has_value());
+            REQUIRE(auth->username == "alice");
             
             // Wrong password
             auth = catalog.AuthenticateUser("alice", "wrong_password");
-            assert(!auth.has_value());
+            REQUIRE(!auth.has_value());
             
             // Non-existent user
             auth = catalog.AuthenticateUser("bob", "password");
-            assert(!auth.has_value());
+            REQUIRE(!auth.has_value());
             
             // Admin authentication
             auth = catalog.AuthenticateUser("admin", "admin");
-            assert(auth.has_value());
-            assert(auth->is_admin == true);
+            REQUIRE(auth.has_value());
+            REQUIRE(auth->is_admin == true);
             
             bpm.FlushAllPages();
         }
@@ -326,44 +363,48 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Create user and table
             int64_t user_id = catalog.CreateUser("reader", "pass", false);
+            REQUIRE(user_id > 0);
             
             std::vector<ColumnDef> columns = {{"id", DataType::INT, false, true}};
             int64_t table_id = catalog.CreateTable("data", columns);
+            REQUIRE(table_id > 0);
             
             // Grant SELECT privilege
-            assert(catalog.GrantPrivilege("reader", "data", PrivilegeType::SELECT) 
-                   == ErrorCode::SUCCESS);
+            err = catalog.GrantPrivilege("reader", "data", PrivilegeType::SELECT);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Check privilege
-            assert(catalog.HasPrivilege(user_id, table_id, PrivilegeType::SELECT));
-            assert(!catalog.HasPrivilege(user_id, table_id, PrivilegeType::INSERT));
+            REQUIRE(catalog.HasPrivilege(user_id, table_id, PrivilegeType::SELECT));
+            REQUIRE(!catalog.HasPrivilege(user_id, table_id, PrivilegeType::INSERT));
             
             // Grant INSERT privilege
-            assert(catalog.GrantPrivilege("reader", "data", PrivilegeType::INSERT)
-                   == ErrorCode::SUCCESS);
-            assert(catalog.HasPrivilege(user_id, table_id, PrivilegeType::INSERT));
+            err = catalog.GrantPrivilege("reader", "data", PrivilegeType::INSERT);
+            REQUIRE(err == ErrorCode::SUCCESS);
+            REQUIRE(catalog.HasPrivilege(user_id, table_id, PrivilegeType::INSERT));
             
             // Get user privileges
             auto privs = catalog.GetUserPrivileges(user_id);
-            assert(privs.size() == 2);
+            REQUIRE(privs.size() == 2);
             
             // Revoke SELECT
-            assert(catalog.RevokePrivilege("reader", "data", PrivilegeType::SELECT)
-                   == ErrorCode::SUCCESS);
-            assert(!catalog.HasPrivilege(user_id, table_id, PrivilegeType::SELECT));
+            err = catalog.RevokePrivilege("reader", "data", PrivilegeType::SELECT);
+            REQUIRE(err == ErrorCode::SUCCESS);
+            REQUIRE(!catalog.HasPrivilege(user_id, table_id, PrivilegeType::SELECT));
             
             // Grant ALL on all tables
-            assert(catalog.GrantPrivilege("reader", "", PrivilegeType::ALL)
-                   == ErrorCode::SUCCESS);
-            assert(catalog.HasPrivilege(user_id, 999, PrivilegeType::DELETE));  // ANY table
+            err = catalog.GrantPrivilege("reader", "", PrivilegeType::ALL);
+            REQUIRE(err == ErrorCode::SUCCESS);
+            REQUIRE(catalog.HasPrivilege(user_id, 999, PrivilegeType::DELETE));  // ANY table
             
             bpm.FlushAllPages();
         }
@@ -381,51 +422,58 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             std::vector<ColumnDef> columns = {
                 {"id", DataType::INT, false, true},
                 {"name", DataType::TEXT, true, false}
             };
             
-            catalog.CreateTable("employees", columns);
+            int64_t tid = catalog.CreateTable("employees", columns);
+            REQUIRE(tid > 0);
             
             // Get BTreeTable for data operations
             BTreeTable* table = catalog.GetBTreeTable("employees");
-            assert(table != nullptr);
+            REQUIRE(table != nullptr);
             
             // Insert some data
             Record rec1;
             rec1.values.push_back(Value(int64_t(1)));
             rec1.values.push_back(Value("Alice"));
-            assert(table->Insert(1, rec1));
+            bool ok = table->Insert(1, rec1);
+            REQUIRE(ok);
             
             Record rec2;
             rec2.values.push_back(Value(int64_t(2)));
             rec2.values.push_back(Value("Bob"));
-            assert(table->Insert(2, rec2));
+            ok = table->Insert(2, rec2);
+            REQUIRE(ok);
             
             // Find record
             auto found = table->Find(1);
-            assert(found.has_value());
-            assert(found->values[1].GetText() == "Alice");
+            REQUIRE(found.has_value());
+            REQUIRE(found->values[1].GetText() == "Alice");
             
             // Update record
             Record updated;
             updated.values.push_back(Value(int64_t(1)));
             updated.values.push_back(Value("Alice Smith"));
-            assert(table->Update(1, updated));
+            ok = table->Update(1, updated);
+            REQUIRE(ok);
             
             found = table->Find(1);
-            assert(found->values[1].GetText() == "Alice Smith");
+            REQUIRE(found->values[1].GetText() == "Alice Smith");
             
             // Delete record
-            assert(table->Delete(2));
-            assert(!table->Find(2).has_value());
+            ok = table->Delete(2);
+            REQUIRE(ok);
+            REQUIRE(!table->Find(2).has_value());
             
             bpm.FlushAllPages();
         }
@@ -444,37 +492,45 @@ private:
         // Create database with tables and users
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Create tables
             std::vector<ColumnDef> cols1 = {
                 {"id", DataType::INT, false, true},
                 {"data", DataType::TEXT, true, false}
             };
-            catalog.CreateTable("table1", cols1);
+            int64_t tid1 = catalog.CreateTable("table1", cols1);
+            REQUIRE(tid1 > 0);
             
             std::vector<ColumnDef> cols2 = {
                 {"key", DataType::INT, false, true},
                 {"value", DataType::FLOAT, true, false}
             };
-            catalog.CreateTable("table2", cols2);
+            int64_t tid2 = catalog.CreateTable("table2", cols2);
+            REQUIRE(tid2 > 0);
             
             // Create user
-            catalog.CreateUser("persist_user", "secret123", false);
+            int64_t uid = catalog.CreateUser("persist_user", "secret123", false);
+            REQUIRE(uid > 0);
             
             // Grant privilege
-            catalog.GrantPrivilege("persist_user", "table1", PrivilegeType::SELECT);
+            err = catalog.GrantPrivilege("persist_user", "table1", PrivilegeType::SELECT);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Insert some data
             BTreeTable* t1 = catalog.GetBTreeTable("table1");
+            REQUIRE(t1 != nullptr);
             Record rec;
             rec.values.push_back(Value(int64_t(100)));
             rec.values.push_back(Value("persistent data"));
-            t1->Insert(100, rec);
+            bool ok = t1->Insert(100, rec);
+            REQUIRE(ok);
             
             bpm.FlushAllPages();
         }
@@ -482,40 +538,43 @@ private:
         // Reopen and verify
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(false);  // Load existing
+            err = catalog.Initialize(false);  // Load existing
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Verify tables
             auto tables = catalog.GetAllTableNames();
-            assert(tables.size() == 2);
-            assert(catalog.TableExists("table1"));
-            assert(catalog.TableExists("table2"));
+            REQUIRE(tables.size() == 2);
+            REQUIRE(catalog.TableExists("table1"));
+            REQUIRE(catalog.TableExists("table2"));
             
             // Verify schema
             auto schema = catalog.GetTableSchema("table1");
-            assert(schema.has_value());
-            assert(schema->columns.size() == 2);
-            assert(schema->columns[0].name == "id");
+            REQUIRE(schema.has_value());
+            REQUIRE(schema->columns.size() == 2);
+            REQUIRE(schema->columns[0].name == "id");
             
             // Verify user
             auto user = catalog.GetUserInfo("persist_user");
-            assert(user.has_value());
+            REQUIRE(user.has_value());
             
             // Verify auth
             auto auth = catalog.AuthenticateUser("persist_user", "secret123");
-            assert(auth.has_value());
+            REQUIRE(auth.has_value());
             
             // Verify privilege
-            assert(catalog.HasPrivilege(user->user_id, 1, PrivilegeType::SELECT));
+            REQUIRE(catalog.HasPrivilege(user->user_id, 1, PrivilegeType::SELECT));
             
             // Verify data
             BTreeTable* t1 = catalog.GetBTreeTable("table1");
+            REQUIRE(t1 != nullptr);
             auto rec = t1->Find(100);
-            assert(rec.has_value());
-            assert(rec->values[1].GetText() == "persistent data");
+            REQUIRE(rec.has_value());
+            REQUIRE(rec->values[1].GetText() == "persistent data");
             
             bpm.FlushAllPages();
         }
@@ -533,11 +592,13 @@ private:
         
         {
             DiskManager disk_mgr(db_file);
-            assert(disk_mgr.Open() == ErrorCode::SUCCESS);
+            ErrorCode err = disk_mgr.Open();
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             BufferPoolManager bpm(100, &disk_mgr);
             Catalog catalog(&bpm);
-            catalog.Initialize(true);
+            err = catalog.Initialize(true);
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             // Create multiple tables
             for (int i = 0; i < 10; ++i) {
@@ -548,33 +609,38 @@ private:
                 };
                 
                 int64_t tid = catalog.CreateTable(name, cols);
-                assert(tid > 0);
+                REQUIRE(tid > 0);
                 
                 // Insert data into each table
                 BTreeTable* table = catalog.GetBTreeTable(name);
+                REQUIRE(table != nullptr);
                 for (int j = 0; j < 10; ++j) {
                     Record rec;
                     rec.values.push_back(Value(int64_t(j)));
                     rec.values.push_back(Value(int64_t(i * 100 + j)));
-                    table->Insert(j, rec);
+                    bool ok = table->Insert(j, rec);
+                    REQUIRE(ok);
                 }
             }
             
             auto tables = catalog.GetAllTableNames();
-            assert(tables.size() == 10);
+            REQUIRE(tables.size() == 10);
             
             // Verify data in random table
             BTreeTable* t5 = catalog.GetBTreeTable("table_5");
+            REQUIRE(t5 != nullptr);
             auto rec = t5->Find(3);
-            assert(rec.has_value());
-            assert(rec->values[1].GetInt() == 503);  // 5 * 100 + 3
+            REQUIRE(rec.has_value());
+            REQUIRE(rec->values[1].GetInt() == 503);  // 5 * 100 + 3
             
             // Drop some tables
-            assert(catalog.DropTable("table_3") == ErrorCode::SUCCESS);
-            assert(catalog.DropTable("table_7") == ErrorCode::SUCCESS);
+            err = catalog.DropTable("table_3");
+            REQUIRE(err == ErrorCode::SUCCESS);
+            err = catalog.DropTable("table_7");
+            REQUIRE(err == ErrorCode::SUCCESS);
             
             tables = catalog.GetAllTableNames();
-            assert(tables.size() == 8);
+            REQUIRE(tables.size() == 8);
             
             bpm.FlushAllPages();
         }

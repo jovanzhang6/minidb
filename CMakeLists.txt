@@ -9,6 +9,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # 编译选项
 if(MSVC)
     add_compile_options(/W4 /utf-8)
+    # Release with Debug Info for diagnostics
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG")
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
