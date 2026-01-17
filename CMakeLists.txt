@@ -81,3 +81,11 @@ add_test(NAME BTreeTest COMMAND btree_test)
 add_executable(catalog_test test/catalog_test.cpp)
 target_link_libraries(catalog_test minidb_core)
 add_test(NAME CatalogTest COMMAND catalog_test)
+
+# 集成测试（演示底层功能）
+add_executable(integration_test test/integration_test.cpp)
+target_link_libraries(integration_test minidb_core)
+
+# Demo测试（简化版，英文输出）
+add_executable(demo_test test/demo_test.cpp)
+target_link_libraries(demo_test minidb_core)
