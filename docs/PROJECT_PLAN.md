@@ -61,29 +61,24 @@ my-db/
 - [x] 编写 `buffer_test` 单元测试
 - **Git提交**: `feat: buffer pool with LRU`
 
-### Phase 3: 页面内部设计 ⬜
+### Phase 3: 页面内部设计 ✅
 - [x] 文档化4种B-tree页面布局 (PAGE_LAYOUT.md)
-- [ ] 实现 `BTreePage` 基类
-- [ ] 实现页头解析和Cell指针管理
-- **Git提交**: `docs: page layout specification`
+- [x] 实现 Varint 编码/解码
+- [x] 实现 `BTreePage` 基类（页头、Cell指针、空间管理）
+- [x] 实现 `TableLeafPage`（记录序列化、CRUD操作）
+- [x] 实现 `TableInteriorPage`（子节点导航）
+- [x] 编写 `page_test` 单元测试（20个测试用例）
+- **Git提交**: `feat: Phase 3 - BTreePage and TablePage implementation`
 
-### Phase 4: 记录格式 ⬜
-- [ ] 实现 Varint 编码/解码
-- [ ] 定义 Serial Type 映射
-- [ ] 实现 `Tuple` 类
-- [ ] 实现 `RecordSerializer`
-- [ ] 编写 `record_test` 单元测试
-- **Git提交**: `feat: record serialization`
-
-### Phase 5: B+tree引擎 ⬜
-- [ ] 实现 `BTreeTable`（rowid为键）
-- [ ] 实现 `BTreeIndex`（列值为键）
-- [ ] 插入/删除/点查/范围扫描
+### Phase 4: B+tree引擎 ⬜
+- [ ] 实现 `BTreeTable`（rowid为键，完整B+tree）
 - [ ] 节点分裂与合并
+- [ ] 插入/删除/点查/范围扫描
+- [ ] 实现 `BTreeIndex`（列值为键）
 - [ ] 编写 `btree_test` 单元测试
 - **Git提交**: `feat: btree insert/search/delete`
 
-### Phase 6: 系统目录 ⬜
+### Phase 5: 系统目录 ⬜
 - [ ] 实现 `Catalog` 类
 - [ ] `sys_schema` 系统表（表/索引元数据）
 - [ ] `sys_users` 用户表
@@ -91,14 +86,14 @@ my-db/
 - [ ] DDL操作支持
 - **Git提交**: `feat: catalog and DDL`
 
-### Phase 7: SQL解析器 ⬜
+### Phase 6: SQL解析器 ⬜
 - [ ] Flex词法规则定义
 - [ ] Bison语法规则定义
 - [ ] AST节点类型定义
 - [ ] DDL/DML/DCL/SELECT语句支持
 - **Git提交**: `feat: flex/bison SQL parser`
 
-### Phase 8: 执行器框架 ⬜
+### Phase 7: 执行器框架 ⬜
 - [ ] 定义 `Operator` 迭代器接口
 - [ ] `SeqScan` 全表扫描
 - [ ] `IndexScan` 索引扫描
@@ -109,14 +104,14 @@ my-db/
 - [ ] `NestedLoopJoin` 连接
 - **Git提交**: `feat: executor operators`
 
-### Phase 9: 事务与日志 ⬜
+### Phase 8: 事务与日志 ⬜
 - [ ] 实现 `LogManager` 回滚日志
 - [ ] 实现 `TransactionManager`
 - [ ] BEGIN/COMMIT/ROLLBACK 支持
 - [ ] 崩溃恢复
 - **Git提交**: `feat: transaction and rollback journal`
 
-### Phase 10: 命令行Shell ⬜
+### Phase 9: 命令行Shell ⬜
 - [ ] REPL主循环
 - [ ] 元命令支持（.open/.tables/.schema/.backup/.restore/.help）
 - [ ] SQL执行集成
