@@ -30,9 +30,6 @@ constexpr uint16_t BTREE_RIGHT_CHILD_OFFSET = 8;  // Only for interior pages
 constexpr uint16_t LEAF_PAGE_HEADER_SIZE = 8;
 constexpr uint16_t INTERIOR_PAGE_HEADER_SIZE = 12;
 
-// Minimum cell size for freeblock (4 bytes: next + size)
-constexpr uint16_t MIN_FREEBLOCK_SIZE = 4;
-
 // Maximum fragmented bytes before defragmentation
 constexpr uint16_t MAX_FRAGMENTED_BYTES = 60;
 

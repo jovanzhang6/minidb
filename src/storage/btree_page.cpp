@@ -4,6 +4,7 @@
  */
 
 #include "btree_page.h"
+#include "../common/config.h"
 #include <algorithm>
 #include <cstring>
 
