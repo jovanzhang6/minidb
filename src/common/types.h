@@ -124,6 +124,9 @@ struct ColumnDef {
     DataType type;
     bool nullable = true;
     bool primary_key = false;
+    // 默认值作为字符串存储（解析时使用）
+    std::string default_value_str;
+    bool has_default = false;
     
     ColumnDef() = default;
     ColumnDef(const std::string& n, DataType t, bool null = true, bool pk = false)
