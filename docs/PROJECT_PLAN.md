@@ -46,23 +46,23 @@ my-db/
 
 ## 开发阶段计划
 
-### Phase 1: 存储基础层 ⬜
-- [ ] 定义数据库文件头结构（100字节）
-- [ ] 实现 `DiskManager` 类
-- [ ] 页面分配与回收
-- [ ] 编写 `storage_test` 单元测试
+### Phase 1: 存储基础层 ✅
+- [x] 定义数据库文件头结构（100字节）
+- [x] 实现 `DiskManager` 类
+- [x] 页面分配与回收
+- [x] 编写 `storage_test` 单元测试
 - **Git提交**: `feat: disk manager and page allocation`
 
-### Phase 2: 缓冲池管理 ⬜
-- [ ] 实现 `LRUReplacer` 替换策略
-- [ ] 实现 `BufferPoolManager` 类
-- [ ] Pin/Unpin 机制
-- [ ] 脏页刷新
-- [ ] 编写 `buffer_test` 单元测试
+### Phase 2: 缓冲池管理 ✅
+- [x] 实现 `LRUReplacer` 替换策略
+- [x] 实现 `BufferPoolManager` 类
+- [x] Pin/Unpin 机制
+- [x] 脏页刷新
+- [x] 编写 `buffer_test` 单元测试
 - **Git提交**: `feat: buffer pool with LRU`
 
 ### Phase 3: 页面内部设计 ⬜
-- [ ] 文档化4种B-tree页面布局
+- [x] 文档化4种B-tree页面布局 (PAGE_LAYOUT.md)
 - [ ] 实现 `BTreePage` 基类
 - [ ] 实现页头解析和Cell指针管理
 - **Git提交**: `docs: page layout specification`
