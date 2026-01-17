@@ -65,7 +65,7 @@ minidb> INSERT INTO t1 VALUES (10);
 - `.open FILENAME`: 打开数据库。如果文件名不存在，则自动创建一个新的空数据库。
 - `.close`: 关闭当前数据库。
 - `.tables`: 列出当前数据库中的所有表。
-- `.schema`: 显示所有表的模式信息（待实现）。
+- `.schema`: 显示所有表的模式信息。
 - `.quit` 或 `.exit`: 退出 Shell。
 
 ### SQL 功能

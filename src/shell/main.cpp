@@ -213,7 +213,33 @@ void run_repl() {
                     std::cout << "Error: No database open" << std::endl;
                 }
             } else if (line == ".schema") {
-                 std::cout << "TODO: Implement .schema" << std::endl;
+                if (g_execution_engine && g_catalog) {
+                     std::vector<std::string> tables = g_catalog->GetAllTableNames();
+                     for (const auto& table_name : tables) {
+                         auto schema_opt = g_catalog->GetTableSchema(table_name);
+                         if (schema_opt) {
+                             const auto& schema = *schema_opt;
+                             std::cout << "CREATE TABLE " << table_name << " (" << std::endl;
+                             for (size_t i = 0; i < schema.columns.size(); ++i) {
+                                 const auto& col = schema.columns[i];
+                                 std::cout << "    " << col.name << " ";
+                                 switch (col.type) {
+                                     case DataType::INT: std::cout << "INT"; break;
+                                     case DataType::FLOAT: std::cout << "FLOAT"; break;
+                                     case DataType::TEXT: std::cout << "TEXT"; break;
+                                     default: std::cout << "UNKNOWN"; break;
+                                 }
+                                 if (i < schema.columns.size() - 1) {
+                                     std::cout << ",";
+                                 }
+                                 std::cout << std::endl;
+                             }
+                             std::cout << ");" << std::endl;
+                         }
+                     }
+                } else {
+                     std::cout << "Error: No database open" << std::endl;
+                }
             } else {
                 std::cout << "Unknown command: " << line << std::endl;
             }

@@ -371,12 +371,127 @@ ExecutionResult ExecutionEngine::ExecuteInsert(const InsertStmt& stmt) {
     return ExecutionResult::Success("Inserted " + std::to_string(count) + " rows");
 }
 
+
 ExecutionResult ExecutionEngine::ExecuteDelete(const DeleteStmt& stmt) {
-    return ExecutionResult::Fail("DELETE not implemented yet");
+    if (!catalog_->TableExists(stmt.table_name)) {
+        return ExecutionResult::Fail("Table not found: " + stmt.table_name);
+    }
+    
+    auto table = catalog_->GetBTreeTable(stmt.table_name);
+    auto schema_opt = catalog_->GetTableSchema(stmt.table_name);
+    if (!schema_opt) return ExecutionResult::Fail("Schema not found");
+    const auto& schema = *schema_opt;
+    
+    // Construct OutputSchema
+    std::vector<OutputSchema::Column> out_cols;
+    for (const auto& col : schema.columns) {
+        out_cols.push_back({col.name, col.type, stmt.table_name, -1});
+    }
+    OutputSchema out_schema(out_cols);
+    
+    std::vector<rowid_t> rows_to_delete;
+    
+    ExpressionEvaluator evaluator;
+    for (auto it = table->Begin(); !it.IsEnd(); it.Next()) {
+        auto record_opt = it.GetRecord();
+        if (!record_opt) continue;
+        const auto& record = *record_opt;
+        rowid_t rid = it.GetRowId();
+        
+        Tuple tuple(record.values, rid);
+        
+        bool matches = true;
+        if (stmt.where_clause) {
+            Value result = evaluator.Evaluate(stmt.where_clause.get(), tuple, out_schema);
+            if (result.IsNull() || (result.GetType() == DataType::INT && result.GetInt() == 0)) {
+                matches = false;
+            }
+        }
+        
+        if (matches) {
+            rows_to_delete.push_back(rid);
+        }
+    }
+    
+    int count = 0;
+    for (auto rid : rows_to_delete) {
+        if (table->Delete(rid)) {
+            count++;
+        }
+    }
+    
+    return ExecutionResult::Success("Deleted " + std::to_string(count) + " rows");
 }
 
 ExecutionResult ExecutionEngine::ExecuteUpdate(const UpdateStmt& stmt) {
-    return ExecutionResult::Fail("UPDATE not implemented yet");
+    if (!catalog_->TableExists(stmt.table_name)) {
+        return ExecutionResult::Fail("Table not found: " + stmt.table_name);
+    }
+    
+    auto table = catalog_->GetBTreeTable(stmt.table_name);
+    auto schema_opt = catalog_->GetTableSchema(stmt.table_name);
+    if (!schema_opt) return ExecutionResult::Fail("Schema not found");
+    const auto& schema = *schema_opt;
+    
+    // Construct OutputSchema
+    std::vector<OutputSchema::Column> out_cols;
+    for (const auto& col : schema.columns) {
+        out_cols.push_back({col.name, col.type, stmt.table_name, -1});
+    }
+    OutputSchema out_schema(out_cols);
+    
+    // Validate update columns
+    std::vector<std::pair<int, const Expression*>> updates_info;
+    for (const auto& update : stmt.updates) {
+        int idx = -1;
+        for (size_t i = 0; i < schema.columns.size(); ++i) {
+            if (schema.columns[i].name == update.column_name) {
+                idx = static_cast<int>(i);
+                break;
+            }
+        }
+        if (idx == -1) {
+            return ExecutionResult::Fail("Column not found: " + update.column_name);
+        }
+        updates_info.push_back({idx, update.value.get()});
+    }
+    
+    int count = 0;
+    ExpressionEvaluator evaluator;
+    std::vector<std::pair<rowid_t, Record>> pending_updates;
+    
+    for (auto it = table->Begin(); !it.IsEnd(); it.Next()) {
+        auto record_opt = it.GetRecord();
+        if (!record_opt) continue;
+        const auto& record = *record_opt;
+        rowid_t rid = it.GetRowId();
+        Tuple tuple(record.values, rid);
+        
+        bool matches = true;
+        if (stmt.where_clause) {
+            Value result = evaluator.Evaluate(stmt.where_clause.get(), tuple, out_schema);
+            if (result.IsNull() || (result.GetType() == DataType::INT && result.GetInt() == 0)) {
+                matches = false;
+            }
+        }
+        
+        if (matches) {
+            std::vector<Value> new_values = record.values;
+            for (const auto& update : updates_info) {
+                new_values[update.first] = evaluator.Evaluate(update.second, tuple, out_schema);
+            }
+            Record new_record(new_values);
+            pending_updates.push_back({rid, new_record});
+        }
+    }
+    
+    for (const auto& pair : pending_updates) {
+        if (table->Update(pair.first, pair.second)) {
+            count++;
+        }
+    }
+    
+    return ExecutionResult::Success("Updated " + std::to_string(count) + " rows");
 }
 
 } // namespace minidb
