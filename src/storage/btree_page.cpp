@@ -77,22 +77,22 @@ void BTreePage::SetRightChild(page_id_t child) {
 
 bool BTreePage::IsLeaf() const {
     PageType type = GetPageType();
-    return type == PageType::PAGE_TABLE_LEAF || type == PageType::PAGE_INDEX_LEAF;
+    return type == PageType::TABLE_LEAF || type == PageType::INDEX_LEAF;
 }
 
 bool BTreePage::IsInterior() const {
     PageType type = GetPageType();
-    return type == PageType::PAGE_TABLE_INTERIOR || type == PageType::PAGE_INDEX_INTERIOR;
+    return type == PageType::TABLE_INTERIOR || type == PageType::INDEX_INTERIOR;
 }
 
 bool BTreePage::IsTablePage() const {
     PageType type = GetPageType();
-    return type == PageType::PAGE_TABLE_LEAF || type == PageType::PAGE_TABLE_INTERIOR;
+    return type == PageType::TABLE_LEAF || type == PageType::TABLE_INTERIOR;
 }
 
 bool BTreePage::IsIndexPage() const {
     PageType type = GetPageType();
-    return type == PageType::PAGE_INDEX_LEAF || type == PageType::PAGE_INDEX_INTERIOR;
+    return type == PageType::INDEX_LEAF || type == PageType::INDEX_INTERIOR;
 }
 
 uint16_t BTreePage::GetHeaderOffset() const {
@@ -399,7 +399,7 @@ void BTreePage::Init(PageType type) {
     SetFragmentedBytes(0);
     
     // For interior pages, initialize right_child
-    if (type == PageType::PAGE_TABLE_INTERIOR || type == PageType::PAGE_INDEX_INTERIOR) {
+    if (type == PageType::TABLE_INTERIOR || type == PageType::INDEX_INTERIOR) {
         SetRightChild(INVALID_PAGE_ID);
     }
 }

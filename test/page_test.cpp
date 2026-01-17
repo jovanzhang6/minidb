@@ -118,9 +118,9 @@ TEST(TestBTreePageInit) {
     std::memset(page_data, 0xFF, PAGE_SIZE);  // Fill with garbage
     
     BTreePage page(page_data, 2);  // Not page 0
-    page.Init(PageType::PAGE_TABLE_LEAF);
+    page.Init(PageType::TABLE_LEAF);
     
-    ASSERT_EQ(page.GetPageType(), PageType::PAGE_TABLE_LEAF);
+    ASSERT_EQ(page.GetPageType(), PageType::TABLE_LEAF);
     ASSERT_EQ(page.GetCellCount(), 0);
     ASSERT_EQ(page.GetCellContentStart(), PAGE_SIZE);
     ASSERT_EQ(page.GetFirstFreeblock(), 0);
@@ -133,9 +133,9 @@ TEST(TestBTreePageInit) {
 TEST(TestBTreePageInterior) {
     uint8_t page_data[PAGE_SIZE];
     BTreePage page(page_data, 2);
-    page.Init(PageType::PAGE_TABLE_INTERIOR);
+    page.Init(PageType::TABLE_INTERIOR);
     
-    ASSERT_EQ(page.GetPageType(), PageType::PAGE_TABLE_INTERIOR);
+    ASSERT_EQ(page.GetPageType(), PageType::TABLE_INTERIOR);
     ASSERT(!page.IsLeaf());
     ASSERT(page.IsInterior());
     ASSERT_EQ(page.GetHeaderSize(), INTERIOR_PAGE_HEADER_SIZE);
@@ -160,7 +160,7 @@ TEST(TestBTreePageHeaderOffset) {
 TEST(TestBTreePageFreeSpace) {
     uint8_t page_data[PAGE_SIZE];
     BTreePage page(page_data, 2);
-    page.Init(PageType::PAGE_TABLE_LEAF);
+    page.Init(PageType::TABLE_LEAF);
     
     // Initially, free space = PAGE_SIZE - header_size
     uint16_t expected = PAGE_SIZE - LEAF_PAGE_HEADER_SIZE;
@@ -170,7 +170,7 @@ TEST(TestBTreePageFreeSpace) {
 TEST(TestBTreePageAllocate) {
     uint8_t page_data[PAGE_SIZE];
     BTreePage page(page_data, 2);
-    page.Init(PageType::PAGE_TABLE_LEAF);
+    page.Init(PageType::TABLE_LEAF);
     
     // Allocate some space
     uint16_t offset1 = page.AllocateSpace(100);
@@ -193,7 +193,7 @@ TEST(TestTableLeafPageInit) {
     TableLeafPage page(page_data, 2);
     page.Init();
     
-    ASSERT_EQ(page.GetPageType(), PageType::PAGE_TABLE_LEAF);
+    ASSERT_EQ(page.GetPageType(), PageType::TABLE_LEAF);
     ASSERT_EQ(page.GetCellCount(), 0);
     ASSERT(page.IsLeaf());
     ASSERT(page.IsTablePage());
@@ -377,7 +377,7 @@ TEST(TestTableInteriorPageInit) {
     TableInteriorPage page(page_data, 2);
     page.Init();
     
-    ASSERT_EQ(page.GetPageType(), PageType::PAGE_TABLE_INTERIOR);
+    ASSERT_EQ(page.GetPageType(), PageType::TABLE_INTERIOR);
     ASSERT_EQ(page.GetCellCount(), 0);
     ASSERT(!page.IsLeaf());
     ASSERT(page.IsInterior());

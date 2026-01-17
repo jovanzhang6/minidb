@@ -22,10 +22,10 @@ constexpr uint32_t INVALID_PAGE_ID = 0;
 // Page types
 enum class PageType : uint8_t {
     PAGE_INVALID = 0x00,
-    PAGE_INDEX_INTERIOR = 0x02,
-    PAGE_TABLE_INTERIOR = 0x05,
-    PAGE_INDEX_LEAF = 10,
-    PAGE_TABLE_LEAF = 13,
+    INDEX_INTERIOR = 0x02,
+    TABLE_INTERIOR = 0x05,
+    INDEX_LEAF = 0x0a,
+    TABLE_LEAF = 0x0d,
     PAGE_FREELIST_TRUNK = 0x01,
     PAGE_OVERFLOW = 0x03,
 };

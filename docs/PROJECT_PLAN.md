@@ -70,13 +70,14 @@ my-db/
 - [x] 编写 `page_test` 单元测试（20个测试用例）
 - **Git提交**: `feat: Phase 3 - BTreePage and TablePage implementation`
 
-### Phase 4: B+tree引擎 ⬜
-- [ ] 实现 `BTreeTable`（rowid为键，完整B+tree）
-- [ ] 节点分裂与合并
-- [ ] 插入/删除/点查/范围扫描
-- [ ] 实现 `BTreeIndex`（列值为键）
-- [ ] 编写 `btree_test` 单元测试
-- **Git提交**: `feat: btree insert/search/delete`
+### Phase 4: B+tree引擎 ✅
+- [x] 实现 `BTreeTable`（rowid为键，完整B+tree）
+- [x] 节点分裂与合并（自动分裂叶子页和内部页）
+- [x] 插入/删除/点查/范围扫描
+- [x] `TableIterator` 迭代器支持
+- [x] 编写 `btree_test` 单元测试（16个测试用例）
+- **Git提交**: `feat: btree table with insert/search/delete/update`
+- **备注**: 索引B-tree (`BTreeIndex`) 暂不实现，后续如需可扩展
 
 ### Phase 5: 系统目录 ⬜
 - [ ] 实现 `Catalog` 类

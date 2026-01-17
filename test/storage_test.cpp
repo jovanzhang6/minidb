@@ -261,7 +261,7 @@ TEST(first_page_structure) {
     assert(std::memcmp(page1, DB_MAGIC, 15) == 0);
     
     // 验证100字节之后是空的TABLE_LEAF页头
-    assert(page1[DB_HEADER_SIZE] == static_cast<char>(PageType::PAGE_TABLE_LEAF));
+    assert(page1[DB_HEADER_SIZE] == static_cast<char>(PageType::TABLE_LEAF));
     
     dm.Close();
     cleanup();

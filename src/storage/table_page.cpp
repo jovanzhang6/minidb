@@ -17,7 +17,7 @@ TableLeafPage::TableLeafPage(uint8_t* data, page_id_t page_id)
     : BTreePage(data, page_id) {}
 
 void TableLeafPage::Init() {
-    BTreePage::Init(PageType::PAGE_TABLE_LEAF);
+    BTreePage::Init(PageType::TABLE_LEAF);
 }
 
 bool TableLeafPage::InsertCell(rowid_t rowid, const Record& record) {
@@ -502,7 +502,7 @@ TableInteriorPage::TableInteriorPage(uint8_t* data, page_id_t page_id)
     : BTreePage(data, page_id) {}
 
 void TableInteriorPage::Init() {
-    BTreePage::Init(PageType::PAGE_TABLE_INTERIOR);
+    BTreePage::Init(PageType::TABLE_INTERIOR);
 }
 
 bool TableInteriorPage::InsertCell(rowid_t rowid, page_id_t left_child) {

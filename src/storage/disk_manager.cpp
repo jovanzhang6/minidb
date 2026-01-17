@@ -56,7 +56,7 @@ ErrorCode DiskManager::Open() {
         std::memcpy(first_page, &header_, sizeof(DatabaseHeader));
         
         // Initialize empty TABLE_LEAF page after header
-        first_page[DB_HEADER_SIZE] = static_cast<char>(PageType::PAGE_TABLE_LEAF);
+        first_page[DB_HEADER_SIZE] = static_cast<char>(PageType::TABLE_LEAF);
         first_page[DB_HEADER_SIZE + 1] = 0;
         first_page[DB_HEADER_SIZE + 2] = 0;
         first_page[DB_HEADER_SIZE + 3] = 0;
