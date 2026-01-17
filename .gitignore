@@ -1,0 +1,35 @@
+# Build outputs
+/build/
+/cmake-build-*/
+/out/
+
+# IDE files
+/.vscode/
+/.idea/
+*.suo
+*.user
+*.sln
+*.vcxproj*
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+
+# Test databases
+*.db
+*.db-journal
+*.db-wal
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.swp
+*~
