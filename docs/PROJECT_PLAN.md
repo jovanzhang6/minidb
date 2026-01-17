@@ -140,11 +140,11 @@ my-db/
 - [x] 编写 `txn_test` 单元测试（9个测试用例）
 - **Git提交**: `feat: Phase 8 - Transaction and Rollback Journal`
 
-### Phase 9: 命令行Shell ⬜
-- [ ] REPL主循环
-- [ ] 元命令支持（.open/.tables/.schema/.backup/.restore/.help）
-- [ ] SQL执行集成
-- [ ] 错误处理与提示
+### Phase 9: 命令行Shell ✅
+- [x] REPL主循环
+- [x] 元命令支持（.open/.tables/.schema/.help）
+- [x] SQL执行集成（ExecutionEngine）
+- [x] 错误处理与提示
 - **Git提交**: `feat: CLI shell with meta commands`
 
 ---

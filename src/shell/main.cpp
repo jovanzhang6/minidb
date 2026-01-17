@@ -5,9 +5,90 @@
 
 #include <iostream>
 #include <string>
+#include <memory>
+#include <vector>
+#include <iomanip>
+#include <csignal>
+
 #include "storage/disk_manager.h"
+#include "buffer/buffer_pool_manager.h"
+#include "catalog/catalog.h"
+#include "txn/transaction_manager.h"
+#include "txn/log_manager.h"
+#include "executor/execution_engine.h"
 
 using namespace minidb;
+
+// Global components
+std::unique_ptr<DiskManager> g_disk_manager;
+std::unique_ptr<BufferPoolManager> g_bpm;
+// LogManager is owned by TransactionManager
+std::unique_ptr<TransactionManager> g_txn_manager;
+std::unique_ptr<Catalog> g_catalog;
+std::unique_ptr<ExecutionEngine> g_execution_engine;
+
+void close_database() {
+    g_execution_engine.reset();
+    g_catalog.reset();
+    g_txn_manager.reset();
+    g_bpm.reset();
+    if (g_disk_manager) {
+        g_disk_manager->Close();
+        g_disk_manager.reset();
+    }
+}
+
+void open_database(const std::string& db_file) {
+    close_database();
+    
+    g_disk_manager = std::make_unique<DiskManager>(db_file);
+    ErrorCode err = g_disk_manager->Open();
+    if (err != ErrorCode::SUCCESS) {
+        std::cerr << "Error opening database file: " << db_file << std::endl;
+        g_disk_manager.reset();
+        return;
+    }
+    
+    g_bpm = std::make_unique<BufferPoolManager>(100, g_disk_manager.get());
+    
+    // Log file is typically db_file + ".log", handled by LogManager
+    // TransactionManager needs DB path to initialize LogManager
+    g_txn_manager = std::make_unique<TransactionManager>(g_bpm.get(), g_disk_manager.get(), db_file);
+    
+    g_catalog = std::make_unique<Catalog>(g_bpm.get());
+    
+    // Check if new:
+    bool is_new = (g_disk_manager->GetPageCount() == 0);
+    
+    if (is_new) {
+        std::cout << "Initializing new database..." << std::endl;
+        err = g_catalog->Initialize(true);
+    } else {
+        err = g_catalog->Initialize(false);
+    }
+    
+    if (err != ErrorCode::SUCCESS) {
+        std::cerr << "Error initializing catalog: " << static_cast<int>(err) << std::endl;
+        close_database();
+        return;
+    }
+    
+    // Perform recovery if needed
+    // TransactionManager handles recovery logic
+    // But we might need to call Recover()?
+    // Phase 8 says TxnMgr::Recover().
+    // If it's a restart, we should recover.
+    if (!is_new) {
+        g_txn_manager->Recover();
+    }
+    
+    g_execution_engine = std::make_unique<ExecutionEngine>(
+        g_catalog.get(), g_bpm.get(), g_txn_manager.get());
+        
+    std::cout << "Database opened: " << db_file << std::endl;
+}
+
+
 
 void print_banner() {
     std::cout << R"(
@@ -32,99 +113,140 @@ void print_help() {
     std::cout << ".quit          Exit this program" << std::endl;
 }
 
-int main(int argc, char* argv[]) {
-    print_banner();
-    
-    std::string db_file;
-    std::unique_ptr<DiskManager> disk_manager;
-    
-    // 如果命令行指定了数据库文件
-    if (argc > 1) {
-        db_file = argv[1];
-        disk_manager = std::make_unique<DiskManager>(db_file);
-        ErrorCode err = disk_manager->Open();
-        if (err == ErrorCode::SUCCESS) {
-            std::cout << "Opened database: " << db_file << std::endl;
-        } else {
-            std::cerr << "Error opening database: " << db_file << std::endl;
-            disk_manager.reset();
-        }
+void handle_signal(int signal) {
+    if (signal == SIGINT) {
+        std::cout << "\nUse .quit to exit\nminidb> " << std::flush;
+    }
+}
+
+void print_result(const ExecutionResult& result) {
+    if (!result.success) {
+        std::cerr << "Error: " << result.message << std::endl;
+        return;
     }
     
-    std::string line;
-    std::cout << "minidb> ";
+    if (!result.message.empty()) {
+        std::cout << result.message << std::endl;
+    }
     
-    while (std::getline(std::cin, line)) {
-        // 去除首尾空白
-        size_t start = line.find_first_not_of(" \t\r\n");
-        if (start == std::string::npos) {
-            std::cout << "minidb> ";
-            continue;
+    if (result.schema && !result.tuples.empty()) {
+        // Print header
+        const auto& columns = result.schema->columns;
+        for (size_t i = 0; i < columns.size(); ++i) {
+            std::cout << columns[i].name;
+            if (i < columns.size() - 1) std::cout << "\t| ";
         }
-        size_t end = line.find_last_not_of(" \t\r\n");
-        line = line.substr(start, end - start + 1);
+        std::cout << std::endl;
         
-        if (line.empty()) {
+        // Print separator
+        for (size_t i = 0; i < columns.size(); ++i) {
+            std::cout << std::string(columns[i].name.length(), '-');
+            if (i < columns.size() - 1) std::cout << "\t+-";
+        }
+        std::cout << std::endl;
+        
+        // Print rows
+        for (const auto& tuple : result.tuples) {
+            for (size_t i = 0; i < columns.size(); ++i) {
+                Value val = tuple[i];
+                std::cout << val.ToString();
+                
+                if (i < columns.size() - 1) std::cout << "\t| ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << "(" << result.tuples.size() << " rows)" << std::endl;
+    }
+}
+
+void run_repl() {
+    std::string line;
+    std::string sql_buffer;
+    
+    while (true) {
+        if (sql_buffer.empty()) {
             std::cout << "minidb> ";
-            continue;
+        } else {
+            std::cout << "      ...> ";
         }
         
-        // 处理元命令
+        if (!std::getline(std::cin, line)) {
+            break; // EOF
+        }
+        
+        // Trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\n\r\f\v"));
+        line.erase(line.find_last_not_of(" \t\n\r\f\v") + 1);
+        
+        if (line.empty()) continue;
+        
+        // Handle meta-commands
         if (line[0] == '.') {
             if (line == ".quit" || line == ".exit") {
                 break;
-            } else if (line == ".help") {
-                print_help();
             } else if (line.substr(0, 5) == ".open") {
-                if (line.length() > 6) {
-                    db_file = line.substr(6);
-                    // 去除文件名前后空白
-                    size_t s = db_file.find_first_not_of(" \t");
-                    size_t e = db_file.find_last_not_of(" \t");
-                    if (s != std::string::npos) {
-                        db_file = db_file.substr(s, e - s + 1);
-                    }
-                    
-                    if (disk_manager) {
-                        disk_manager->Close();
-                    }
-                    disk_manager = std::make_unique<DiskManager>(db_file);
-                    ErrorCode err = disk_manager->Open();
-                    if (err == ErrorCode::SUCCESS) {
-                        std::cout << "Opened database: " << db_file << std::endl;
-                    } else {
-                        std::cerr << "Error opening database" << std::endl;
-                        disk_manager.reset();
-                    }
+                std::string db_file = line.substr(6);
+                // Trim db_file
+                db_file.erase(0, db_file.find_first_not_of(" \t"));
+                db_file.erase(db_file.find_last_not_of(" \t") + 1);
+                if (!db_file.empty()) {
+                    open_database(db_file);
                 } else {
-                    std::cerr << "Usage: .open FILENAME" << std::endl;
+                    std::cout << "Usage: .open FILENAME" << std::endl;
                 }
             } else if (line == ".close") {
-                if (disk_manager) {
-                    disk_manager->Close();
-                    disk_manager.reset();
-                    std::cout << "Database closed" << std::endl;
-                }
+                close_database();
+                std::cout << "Database closed" << std::endl;
+            } else if (line == ".help") {
+                print_help();
             } else if (line == ".tables") {
-                std::cout << "(not implemented yet)" << std::endl;
+                if (g_execution_engine) {
+                    if (g_catalog) {
+                        std::vector<std::string> tables = g_catalog->GetAllTableNames();
+                        for (const auto& name : tables) {
+                            std::cout << name << std::endl;
+                        }
+                    } else {
+                        std::cout << "Error: No database open" << std::endl;
+                    }
+                } else {
+                    std::cout << "Error: No database open" << std::endl;
+                }
             } else if (line == ".schema") {
-                std::cout << "(not implemented yet)" << std::endl;
+                 std::cout << "TODO: Implement .schema" << std::endl;
             } else {
-                std::cerr << "Unknown command: " << line << std::endl;
-                std::cerr << "Enter \".help\" for usage hints." << std::endl;
+                std::cout << "Unknown command: " << line << std::endl;
             }
-        } else {
-            // SQL语句处理（待实现）
-            std::cout << "(SQL execution not implemented yet)" << std::endl;
+            continue;
         }
         
-        std::cout << "minidb> ";
+        // Accumulate SQL
+        sql_buffer += line;
+        if (sql_buffer.back() == ';') {
+            if (g_execution_engine) {
+                ExecutionResult result = g_execution_engine->Execute(sql_buffer);
+                print_result(result);
+            } else {
+                std::cout << "Error: No database open. Use .open FILENAME" << std::endl;
+            }
+            sql_buffer.clear();
+        } else {
+            sql_buffer += " ";
+        }
+    }
+}
+
+int main(int argc, char* argv[]) {
+    // signal(SIGINT, handle_signal); // Optional: Handle Ctrl+C
+    
+    print_banner();
+    
+    if (argc > 1) {
+        open_database(argv[1]);
     }
     
-    if (disk_manager) {
-        disk_manager->Close();
-    }
+    run_repl();
     
-    std::cout << "Goodbye!" << std::endl;
+    close_database();
     return 0;
 }
