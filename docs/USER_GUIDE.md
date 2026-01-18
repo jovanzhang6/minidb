@@ -22,6 +22,12 @@ cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build . --config Release
 ```
+或者只编译主程序，不编译测试（推荐，更快）
+```powershell
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . --config Release --target minidb
+```
 
 ## 2. 运行 Shell
 

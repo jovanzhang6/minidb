@@ -28,6 +28,8 @@ std::unique_ptr<TransactionManager> g_txn_manager;
 std::unique_ptr<Catalog> g_catalog;
 std::unique_ptr<ExecutionEngine> g_execution_engine;
 std::string g_current_db_file;  // 当前打开的数据库文件路径
+bool g_logged_in = false;       // 是否已登录
+std::string g_current_user;     // 当前登录的用户名
 
 void close_database() {
     g_execution_engine.reset();
@@ -45,6 +47,8 @@ void close_database() {
         g_disk_manager.reset();
     }
     g_current_db_file.clear();
+    g_logged_in = false;
+    g_current_user.clear();
 }
 
 // 文件复制辅助函数
@@ -57,6 +61,37 @@ bool copy_file(const std::string& src, const std::string& dst) {
     
     out << in.rdbuf();
     return out.good();
+}
+
+// 登录函数
+bool do_login(const std::string& username, const std::string& password) {
+    if (!g_catalog) {
+        std::cerr << "Error: No database open" << std::endl;
+        return false;
+    }
+    
+    auto user = g_catalog->AuthenticateUser(username, password);
+    if (!user) {
+        std::cerr << "Error: Invalid username or password" << std::endl;
+        return false;
+    }
+    
+    // Set user in execution engine
+    g_execution_engine->SetCurrentUser(*user);
+    g_logged_in = true;
+    g_current_user = username;
+    std::cout << "Logged in as: " << username << (user->is_admin ? " (admin)" : "") << std::endl;
+    return true;
+}
+
+// 登出函数
+void do_logout() {
+    if (g_execution_engine) {
+        g_execution_engine->ClearCurrentUser();
+    }
+    g_logged_in = false;
+    g_current_user.clear();
+    std::cout << "Logged out" << std::endl;
 }
 
 void open_database(const std::string& db_file) {
@@ -131,14 +166,18 @@ void print_banner() {
 }
 
 void print_help() {
-    std::cout << ".help          Show this message" << std::endl;
-    std::cout << ".open FILE     Open database file" << std::endl;
-    std::cout << ".close         Close current database" << std::endl;
-    std::cout << ".tables        List all tables" << std::endl;
-    std::cout << ".schema        Show schema of all tables" << std::endl;
-    std::cout << ".backup        Backup database to .db.bak file" << std::endl;
-    std::cout << ".restore       Restore database from .db.bak file" << std::endl;
-    std::cout << ".quit          Exit this program" << std::endl;
+    std::cout << ".help              Show this message" << std::endl;
+    std::cout << ".open FILE         Open database file" << std::endl;
+    std::cout << ".close             Close current database" << std::endl;
+    std::cout << ".login USER PASS   Login with username and password" << std::endl;
+    std::cout << ".logout            Logout current user" << std::endl;
+    std::cout << ".whoami            Show current logged-in user" << std::endl;
+    std::cout << ".users             List all users (admin only)" << std::endl;
+    std::cout << ".tables            List all tables" << std::endl;
+    std::cout << ".schema            Show schema of all tables" << std::endl;
+    std::cout << ".backup            Backup database to .db.bak file" << std::endl;
+    std::cout << ".restore           Restore database from .db.bak file" << std::endl;
+    std::cout << ".quit              Exit this program" << std::endl;
 }
 
 void handle_signal(int signal) {
@@ -268,6 +307,56 @@ void run_repl() {
                 } else {
                      std::cout << "Error: No database open" << std::endl;
                 }
+            } else if (line.substr(0, 6) == ".login") {
+                // Parse: .login username password
+                std::string args = line.substr(6);
+                args.erase(0, args.find_first_not_of(" \t"));
+                
+                size_t space_pos = args.find(' ');
+                if (space_pos == std::string::npos) {
+                    std::cout << "Usage: .login USERNAME PASSWORD" << std::endl;
+                } else {
+                    std::string username = args.substr(0, space_pos);
+                    std::string password = args.substr(space_pos + 1);
+                    password.erase(0, password.find_first_not_of(" \t"));
+                    password.erase(password.find_last_not_of(" \t") + 1);
+                    
+                    if (username.empty() || password.empty()) {
+                        std::cout << "Usage: .login USERNAME PASSWORD" << std::endl;
+                    } else {
+                        do_login(username, password);
+                    }
+                }
+            } else if (line == ".logout") {
+                do_logout();
+            } else if (line == ".whoami") {
+                if (g_logged_in) {
+                    auto user = g_catalog->GetUserInfo(g_current_user);
+                    if (user) {
+                        std::cout << "Current user: " << g_current_user 
+                                  << (user->is_admin ? " (admin)" : " (user)") << std::endl;
+                    }
+                } else {
+                    std::cout << "Not logged in" << std::endl;
+                }
+            } else if (line == ".users") {
+                if (!g_catalog) {
+                    std::cout << "Error: No database open" << std::endl;
+                } else if (!g_logged_in) {
+                    std::cout << "Error: Not logged in" << std::endl;
+                } else {
+                    auto user = g_catalog->GetUserInfo(g_current_user);
+                    if (!user || !user->is_admin) {
+                        std::cout << "Error: Admin privilege required" << std::endl;
+                    } else {
+                        std::vector<std::string> users = g_catalog->GetAllUserNames();
+                        std::cout << "Users:" << std::endl;
+                        for (const auto& name : users) {
+                            auto info = g_catalog->GetUserInfo(name);
+                            std::cout << "  " << name << (info && info->is_admin ? " (admin)" : "") << std::endl;
+                        }
+                    }
+                }
             } else if (line == ".backup") {
                 if (g_current_db_file.empty()) {
                     std::cout << "Error: No database open" << std::endl;
@@ -317,6 +406,13 @@ void run_repl() {
             continue;
         }
         
+        // Check login before executing SQL
+        if (!g_logged_in) {
+            std::cout << "Error: Not logged in. Use .login USERNAME PASSWORD" << std::endl;
+            sql_buffer.clear();
+            continue;
+        }
+        
         // Accumulate SQL
         sql_buffer += line;
         if (sql_buffer.back() == ';') {
@@ -338,8 +434,14 @@ int main(int argc, char* argv[]) {
     
     print_banner();
     
+    // Usage: minidb [database] [username] [password]
     if (argc > 1) {
         open_database(argv[1]);
+        
+        // Auto-login if credentials provided
+        if (argc >= 4) {
+            do_login(argv[2], argv[3]);
+        }
     }
     
     run_repl();

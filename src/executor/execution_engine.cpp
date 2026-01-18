@@ -8,6 +8,73 @@ namespace minidb {
 
 ExecutionEngine::ExecutionEngine(Catalog* catalog, BufferPoolManager* bpm, TransactionManager* txn_mgr)
     : catalog_(catalog), bpm_(bpm), txn_mgr_(txn_mgr) {}
+
+// =====================
+// Permission Check Helpers
+// =====================
+
+ExecutionResult ExecutionEngine::CheckDDLPermission() {
+    if (!has_user_) {
+        return ExecutionResult::Fail("Permission denied: Not logged in");
+    }
+    if (!current_user_.is_admin) {
+        return ExecutionResult::Fail("Permission denied: Only admin can execute DDL statements");
+    }
+    return ExecutionResult::Success();
+}
+
+ExecutionResult ExecutionEngine::CheckDCLPermission() {
+    if (!has_user_) {
+        return ExecutionResult::Fail("Permission denied: Not logged in");
+    }
+    if (!current_user_.is_admin) {
+        return ExecutionResult::Fail("Permission denied: Only admin can manage users and privileges");
+    }
+    return ExecutionResult::Success();
+}
+
+ExecutionResult ExecutionEngine::CheckDMLPermission(const std::string& table_name, PrivilegeType required) {
+    if (!has_user_) {
+        return ExecutionResult::Fail("Permission denied: Not logged in");
+    }
+    // Admin has all privileges
+    if (current_user_.is_admin) {
+        return ExecutionResult::Success();
+    }
+    // Check table_id
+    auto table_info = catalog_->GetTableInfo(table_name);
+    if (!table_info) {
+        return ExecutionResult::Fail("Table not found: " + table_name);
+    }
+    // Check privilege
+    if (!catalog_->HasPrivilege(current_user_.user_id, table_info->table_id, required)) {
+        std::string priv_name;
+        switch (required) {
+            case PrivilegeType::SELECT: priv_name = "SELECT"; break;
+            case PrivilegeType::INSERT: priv_name = "INSERT"; break;
+            case PrivilegeType::UPDATE: priv_name = "UPDATE"; break;
+            case PrivilegeType::DELETE: priv_name = "DELETE"; break;
+            default: priv_name = "UNKNOWN"; break;
+        }
+        return ExecutionResult::Fail("Permission denied: " + priv_name + " privilege required on table " + table_name);
+    }
+    return ExecutionResult::Success();
+}
+
+PrivilegeType ExecutionEngine::ConvertPrivilegeType(AstPrivilegeType ast_type) {
+    switch (ast_type) {
+        case AstPrivilegeType::SELECT: return PrivilegeType::SELECT;
+        case AstPrivilegeType::INSERT: return PrivilegeType::INSERT;
+        case AstPrivilegeType::UPDATE: return PrivilegeType::UPDATE;
+        case AstPrivilegeType::DELETE_PRIV: return PrivilegeType::DELETE;
+        case AstPrivilegeType::ALL: return PrivilegeType::ALL;
+        default: return PrivilegeType::SELECT;
+    }
+}
+
+// =====================
+// Main Execute Function
+// =====================
     
 ExecutionResult ExecutionEngine::Execute(const std::string& sql) {
     auto stmt = parser_.Parse(sql);
@@ -64,6 +131,12 @@ ExecutionResult ExecutionEngine::Execute(const std::string& sql) {
             case StmtType::DROP_USER:
                 result = ExecuteDropUser(stmt->Get<DropUserStmt>());
                 break;
+            case StmtType::GRANT:
+                result = ExecuteGrant(stmt->Get<GrantStmt>());
+                break;
+            case StmtType::REVOKE:
+                result = ExecuteRevoke(stmt->Get<RevokeStmt>());
+                break;
             default:
                 result = ExecutionResult::Fail("Unsupported statement type");
                 break;
@@ -95,6 +168,10 @@ ExecutionResult ExecutionEngine::Execute(const std::string& sql) {
 }
 
 ExecutionResult ExecutionEngine::ExecuteCreateTable(const CreateTableStmt& stmt) {
+    // Permission check: DDL requires admin
+    auto perm = CheckDDLPermission();
+    if (!perm.success) return perm;
+    
     if (stmt.columns.empty()) {
         return ExecutionResult::Fail("At least one column is required");
     }
@@ -116,6 +193,10 @@ ExecutionResult ExecutionEngine::ExecuteCreateTable(const CreateTableStmt& stmt)
 }
 
 ExecutionResult ExecutionEngine::ExecuteDropTable(const DropTableStmt& stmt) {
+    // Permission check: DDL requires admin
+    auto perm = CheckDDLPermission();
+    if (!perm.success) return perm;
+    
     if (!catalog_->TableExists(stmt.table_name)) {
         if (stmt.if_exists) {
             return ExecutionResult::Success("Table does not exist, skipping");
@@ -132,6 +213,10 @@ ExecutionResult ExecutionEngine::ExecuteDropTable(const DropTableStmt& stmt) {
 }
 
 ExecutionResult ExecutionEngine::ExecuteAlterTable(const AlterTableStmt& stmt) {
+    // Permission check: DDL requires admin
+    auto perm = CheckDDLPermission();
+    if (!perm.success) return perm;
+    
     // 检查表是否存在
     if (!catalog_->TableExists(stmt.table_name)) {
         return ExecutionResult::Fail("Table does not exist: " + stmt.table_name);
@@ -168,19 +253,94 @@ ExecutionResult ExecutionEngine::ExecuteAlterTable(const AlterTableStmt& stmt) {
 }
 
 ExecutionResult ExecutionEngine::ExecuteCreateUser(const CreateUserStmt& stmt) {
+    // Permission check: DCL requires admin
+    auto perm = CheckDCLPermission();
+    if (!perm.success) return perm;
+    
     int64_t user_id = catalog_->CreateUser(stmt.username, stmt.password, stmt.is_admin);
     if (user_id < 0) {
+        if (user_id == static_cast<int64_t>(ErrorCode::DUPLICATE_KEY)) {
+            return ExecutionResult::Fail("User already exists: " + stmt.username);
+        }
         return ExecutionResult::Fail("Failed to create user (ErrorCode: " + std::to_string(user_id) + ")");
     }
     return ExecutionResult::Success("User created successfully");
 }
 
 ExecutionResult ExecutionEngine::ExecuteDropUser(const DropUserStmt& stmt) {
+    // Permission check: DCL requires admin
+    auto perm = CheckDCLPermission();
+    if (!perm.success) return perm;
+    
+    // Cannot drop root user
+    if (stmt.username == "root") {
+        return ExecutionResult::Fail("Cannot drop root user");
+    }
+    
     ErrorCode err = catalog_->DropUser(stmt.username);
     if (err != ErrorCode::SUCCESS) {
+        if (err == ErrorCode::KEY_NOT_FOUND) {
+            return ExecutionResult::Fail("User not found: " + stmt.username);
+        }
         return ExecutionResult::Fail("Failed to drop user (ErrorCode: " + std::to_string(static_cast<int>(err)) + ")");
     }
     return ExecutionResult::Success("User dropped successfully");
+}
+
+ExecutionResult ExecutionEngine::ExecuteGrant(const GrantStmt& stmt) {
+    // Permission check: DCL requires admin
+    auto perm = CheckDCLPermission();
+    if (!perm.success) return perm;
+    
+    // Check if user exists
+    auto user = catalog_->GetUserInfo(stmt.username);
+    if (!user) {
+        return ExecutionResult::Fail("User not found: " + stmt.username);
+    }
+    
+    // Check if table exists (if specified)
+    if (!stmt.table_name.empty() && !catalog_->TableExists(stmt.table_name)) {
+        return ExecutionResult::Fail("Table not found: " + stmt.table_name);
+    }
+    
+    // Grant each privilege
+    for (const auto& ast_priv : stmt.privileges) {
+        PrivilegeType priv = ConvertPrivilegeType(ast_priv);
+        ErrorCode err = catalog_->GrantPrivilege(stmt.username, stmt.table_name, priv);
+        if (err != ErrorCode::SUCCESS) {
+            return ExecutionResult::Fail("Failed to grant privilege");
+        }
+    }
+    
+    return ExecutionResult::Success("Privileges granted successfully");
+}
+
+ExecutionResult ExecutionEngine::ExecuteRevoke(const RevokeStmt& stmt) {
+    // Permission check: DCL requires admin
+    auto perm = CheckDCLPermission();
+    if (!perm.success) return perm;
+    
+    // Check if user exists
+    auto user = catalog_->GetUserInfo(stmt.username);
+    if (!user) {
+        return ExecutionResult::Fail("User not found: " + stmt.username);
+    }
+    
+    // Check if table exists (if specified)
+    if (!stmt.table_name.empty() && !catalog_->TableExists(stmt.table_name)) {
+        return ExecutionResult::Fail("Table not found: " + stmt.table_name);
+    }
+    
+    // Revoke each privilege
+    for (const auto& ast_priv : stmt.privileges) {
+        PrivilegeType priv = ConvertPrivilegeType(ast_priv);
+        ErrorCode err = catalog_->RevokePrivilege(stmt.username, stmt.table_name, priv);
+        if (err != ErrorCode::SUCCESS && err != ErrorCode::KEY_NOT_FOUND) {
+            return ExecutionResult::Fail("Failed to revoke privilege");
+        }
+    }
+    
+    return ExecutionResult::Success("Privileges revoked successfully");
 }
 
 ExecutionResult ExecutionEngine::ExecuteBegin(const BeginStmt& stmt) {
@@ -224,6 +384,23 @@ ExecutionResult ExecutionEngine::ExecuteRollback(const RollbackStmt& stmt) {
 
 // Stubs for now
 ExecutionResult ExecutionEngine::ExecuteSelect(const SelectStmt& stmt) {
+    // Permission check: SELECT requires SELECT privilege on each table
+    if (!IsAdmin()) {
+        for (const auto& table_ref : stmt.from_tables) {
+            if (!table_ref.table_name.empty()) {  // Not a subquery
+                auto perm = CheckDMLPermission(table_ref.table_name, PrivilegeType::SELECT);
+                if (!perm.success) return perm;
+            }
+        }
+        // Also check join tables
+        for (const auto& join : stmt.joins) {
+            if (!join.right_table.table_name.empty()) {
+                auto perm = CheckDMLPermission(join.right_table.table_name, PrivilegeType::SELECT);
+                if (!perm.success) return perm;
+            }
+        }
+    }
+    
     temporary_exprs_.clear();
     
     ExecutorContext ctx(catalog_, bpm_);
@@ -544,6 +721,12 @@ std::unique_ptr<Operator> ExecutionEngine::BuildExecutionPlan(const SelectStmt& 
 }
 
 ExecutionResult ExecutionEngine::ExecuteInsert(const InsertStmt& stmt) {
+    // Permission check: INSERT requires INSERT privilege
+    if (!IsAdmin()) {
+        auto perm = CheckDMLPermission(stmt.table_name, PrivilegeType::INSERT);
+        if (!perm.success) return perm;
+    }
+    
     if (!catalog_->TableExists(stmt.table_name)) {
         return ExecutionResult::Fail("Table not found: " + stmt.table_name);
     }
@@ -628,6 +811,12 @@ ExecutionResult ExecutionEngine::ExecuteInsert(const InsertStmt& stmt) {
 
 
 ExecutionResult ExecutionEngine::ExecuteDelete(const DeleteStmt& stmt) {
+    // Permission check: DELETE requires DELETE privilege
+    if (!IsAdmin()) {
+        auto perm = CheckDMLPermission(stmt.table_name, PrivilegeType::DELETE);
+        if (!perm.success) return perm;
+    }
+    
     if (!catalog_->TableExists(stmt.table_name)) {
         return ExecutionResult::Fail("Table not found: " + stmt.table_name);
     }
@@ -680,6 +869,12 @@ ExecutionResult ExecutionEngine::ExecuteDelete(const DeleteStmt& stmt) {
 }
 
 ExecutionResult ExecutionEngine::ExecuteUpdate(const UpdateStmt& stmt) {
+    // Permission check: UPDATE requires UPDATE privilege
+    if (!IsAdmin()) {
+        auto perm = CheckDMLPermission(stmt.table_name, PrivilegeType::UPDATE);
+        if (!perm.success) return perm;
+    }
+    
     if (!catalog_->TableExists(stmt.table_name)) {
         return ExecutionResult::Fail("Table not found: " + stmt.table_name);
     }

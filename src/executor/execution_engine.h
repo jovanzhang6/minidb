@@ -49,12 +49,42 @@ public:
      * @brief Execute a SQL statement
      */
     ExecutionResult Execute(const std::string& sql);
+    
+    /**
+     * @brief Set current user for permission checking
+     */
+    void SetCurrentUser(const UserInfo& user) { current_user_ = user; has_user_ = true; }
+    
+    /**
+     * @brief Clear current user (logout)
+     */
+    void ClearCurrentUser() { has_user_ = false; }
+    
+    /**
+     * @brief Check if a user is logged in
+     */
+    bool HasCurrentUser() const { return has_user_; }
+    
+    /**
+     * @brief Get current user info
+     */
+    const UserInfo& GetCurrentUser() const { return current_user_; }
 
 private:
     Catalog* catalog_;
     BufferPoolManager* bpm_;
     TransactionManager* txn_mgr_;
     Parser parser_;
+    
+    // Current logged-in user
+    UserInfo current_user_;
+    bool has_user_ = false;
+    
+    // Permission check helpers
+    bool IsAdmin() const { return has_user_ && current_user_.is_admin; }
+    ExecutionResult CheckDDLPermission();  // For CREATE/DROP/ALTER TABLE
+    ExecutionResult CheckDCLPermission();  // For CREATE/DROP USER, GRANT, REVOKE
+    ExecutionResult CheckDMLPermission(const std::string& table_name, PrivilegeType required);
     
     // Executors for different statement types
     ExecutionResult ExecuteCreateTable(const CreateTableStmt& stmt);
@@ -68,6 +98,8 @@ private:
     // DCL
     ExecutionResult ExecuteCreateUser(const CreateUserStmt& stmt);
     ExecutionResult ExecuteDropUser(const DropUserStmt& stmt);
+    ExecutionResult ExecuteGrant(const GrantStmt& stmt);
+    ExecutionResult ExecuteRevoke(const RevokeStmt& stmt);
     
     // TCL
     ExecutionResult ExecuteBegin(const BeginStmt& stmt);
@@ -84,6 +116,9 @@ private:
     std::unique_ptr<Operator> BuildExecutionPlan(const SelectStmt& stmt, ExecutorContext* ctx);
     std::unique_ptr<Operator> BuildTableRefOperator(const TableRef& table_ref, ExecutorContext* ctx);
     std::unique_ptr<Expression> ConvertExpression(const Expression& ast_expr, const OutputSchema* schema);
+    
+    // Convert AST privilege type to catalog privilege type
+    PrivilegeType ConvertPrivilegeType(AstPrivilegeType ast_type);
 };
 
 } // namespace minidb

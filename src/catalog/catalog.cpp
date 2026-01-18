@@ -137,8 +137,8 @@ ErrorCode Catalog::InitializeNewDatabase() {
     // For persistence, we rely on the fixed page IDs: 1, 2, 3, 4
     // If allocation gives different IDs, we have a problem with persistence
     
-    // Create default admin user
-    CreateUser("admin", "admin", true);
+    // Create default root user with password '123456'
+    CreateUser("root", "123456", true);
     
     return ErrorCode::SUCCESS;
 }
