@@ -83,6 +83,8 @@ enum class ErrorCode : int {
     CORRUPTED_DATA = -14,
     TRANSACTION_IN_PROGRESS = -15,  // 已有活动事务
     NO_TRANSACTION = -16,           // 无活动事务
+    INDEX_NOT_FOUND = -17,          // 索引不存在
+    INDEX_EXISTS = -18,             // 索引已存在
 };
 
 // Value class: stores a single field value

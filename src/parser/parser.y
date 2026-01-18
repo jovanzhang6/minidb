@@ -120,7 +120,7 @@ using namespace minidb;
 
 /* 非终结符类型 */
 %type <stmt> statement ddl_statement dml_statement dcl_statement tcl_statement
-%type <stmt> create_table_stmt drop_table_stmt alter_table_stmt create_index_stmt
+%type <stmt> create_table_stmt drop_table_stmt alter_table_stmt create_index_stmt drop_index_stmt
 %type <stmt> insert_stmt update_stmt delete_stmt select_stmt
 %type <stmt> create_user_stmt drop_user_stmt grant_stmt revoke_stmt
 %type <stmt> begin_stmt commit_stmt rollback_stmt
@@ -156,7 +156,7 @@ using namespace minidb;
 %type <priv_type> privilege
 %type <priv_list> privilege_list
 
-%type <bool_val> opt_not opt_distinct opt_if_exists opt_if_not_exists opt_null
+%type <bool_val> opt_not opt_distinct opt_if_exists opt_if_not_exists opt_null opt_unique
 
 %type <int_val> opt_limit opt_offset
 
@@ -204,6 +204,7 @@ ddl_statement:
     | drop_table_stmt   { $$ = $1; }
     | alter_table_stmt  { $$ = $1; }
     | create_index_stmt { $$ = $1; }
+    | drop_index_stmt   { $$ = $1; }
     ;
 
 /* CREATE TABLE */
@@ -363,6 +364,7 @@ create_index_stmt:
         index_stmt.table_name = *$7;
         index_stmt.column_names = std::move(*$9);
         index_stmt.if_not_exists = $4;
+        index_stmt.is_unique = $2;
         stmt->data = std::move(index_stmt);
         delete $5;
         delete $7;
@@ -372,8 +374,22 @@ create_index_stmt:
     ;
 
 opt_unique:
-    /* empty */
-    | UNIQUE
+    /* empty */ { $$ = false; }
+    | UNIQUE    { $$ = true; }
+    ;
+
+/* DROP INDEX */
+drop_index_stmt:
+    DROP INDEX opt_if_exists IDENTIFIER {
+        auto stmt = new Statement();
+        stmt->type = StmtType::DROP_INDEX;
+        DropIndexStmt drop_stmt;
+        drop_stmt.index_name = *$4;
+        drop_stmt.if_exists = $3;
+        stmt->data = std::move(drop_stmt);
+        delete $4;
+        $$ = stmt;
+    }
     ;
 
 column_name_list:

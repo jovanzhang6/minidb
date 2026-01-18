@@ -227,6 +227,7 @@ enum class StmtType {
     DROP_TABLE,
     ALTER_TABLE,
     CREATE_INDEX,
+    DROP_INDEX,
     
     // DML
     INSERT,
@@ -301,9 +302,18 @@ struct AlterTableStmt {
 struct CreateIndexStmt {
     std::string index_name;
     std::string table_name;
-    std::vector<std::string> column_names;
+    std::vector<std::string> column_names;  // 为了兼容，保留vector，但只支持单列
+    std::string column_name;                 // 单列索引使用（推荐）
     bool is_unique = false;
     bool if_not_exists = false;
+};
+
+/**
+ * @brief DROP INDEX语句
+ */
+struct DropIndexStmt {
+    std::string index_name;
+    bool if_exists = false;
 };
 
 // ============================================================================
@@ -502,6 +512,7 @@ struct Statement {
         DropTableStmt,
         AlterTableStmt,
         CreateIndexStmt,
+        DropIndexStmt,
         InsertStmt,
         UpdateStmt,
         DeleteStmt,

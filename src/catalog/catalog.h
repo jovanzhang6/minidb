@@ -35,13 +35,15 @@ constexpr page_id_t SYS_TABLES_ROOT_PAGE = 1;
 constexpr page_id_t SYS_COLUMNS_ROOT_PAGE = 2;
 constexpr page_id_t SYS_USERS_ROOT_PAGE = 3;
 constexpr page_id_t SYS_PRIVILEGES_ROOT_PAGE = 4;
-constexpr page_id_t FIRST_USER_PAGE = 5;
+constexpr page_id_t SYS_INDEXES_ROOT_PAGE = 5;
+constexpr page_id_t FIRST_USER_PAGE = 6;
 
 // System table names
 constexpr const char* SYS_TABLES_NAME = "sys_tables";
 constexpr const char* SYS_COLUMNS_NAME = "sys_columns";
 constexpr const char* SYS_USERS_NAME = "sys_users";
 constexpr const char* SYS_PRIVILEGES_NAME = "sys_privileges";
+constexpr const char* SYS_INDEXES_NAME = "sys_indexes";
 
 /**
  * @brief Table metadata stored in sys_tables
@@ -134,6 +136,30 @@ struct PrivilegeInfo {
     
     Record ToRecord() const;
     static PrivilegeInfo FromRecord(const Record& record);
+};
+
+/**
+ * @brief Index metadata stored in sys_indexes
+ * 
+ * sys_indexes schema:
+ * - rowid: auto-generated
+ * - index_id (INT): unique index identifier
+ * - index_name (TEXT): unique index name
+ * - table_id (INT): foreign key to sys_tables
+ * - column_id (INT): column index within the table
+ * - root_page (INT): index B-tree root page ID
+ * - is_unique (INT): 1 if unique index, 0 otherwise
+ */
+struct IndexInfo {
+    int64_t index_id = 0;
+    std::string index_name;
+    int64_t table_id = 0;
+    int32_t column_id = 0;
+    page_id_t root_page = INVALID_PAGE_ID;
+    bool is_unique = false;
+    
+    Record ToRecord() const;
+    static IndexInfo FromRecord(const Record& record);
 };
 
 /**
@@ -347,6 +373,60 @@ public:
     std::vector<PrivilegeInfo> GetUserPrivileges(int64_t user_id) const;
     
     // =====================
+    // Index Operations
+    // =====================
+    
+    /**
+     * @brief Create a new index
+     * @param index_name Index name
+     * @param table_name Table name
+     * @param column_name Column name
+     * @param is_unique Whether unique index
+     * @return index_id on success, negative ErrorCode on failure
+     */
+    int64_t CreateIndex(const std::string& index_name,
+                        const std::string& table_name,
+                        const std::string& column_name,
+                        bool is_unique = false);
+    
+    /**
+     * @brief Drop an index
+     * @param index_name Index name
+     * @return ErrorCode::SUCCESS on success
+     */
+    ErrorCode DropIndex(const std::string& index_name);
+    
+    /**
+     * @brief Get index info by name
+     * @param index_name Index name
+     * @return IndexInfo if found
+     */
+    std::optional<IndexInfo> GetIndexInfo(const std::string& index_name) const;
+    
+    /**
+     * @brief Get all indexes for a table
+     * @param table_name Table name
+     * @return Vector of IndexInfo
+     */
+    std::vector<IndexInfo> GetTableIndexes(const std::string& table_name) const;
+    
+    /**
+     * @brief Find index by table and column
+     * @param table_name Table name
+     * @param column_name Column name
+     * @return IndexInfo if found
+     */
+    std::optional<IndexInfo> FindIndexByColumn(const std::string& table_name,
+                                                const std::string& column_name) const;
+    
+    /**
+     * @brief Check if index exists
+     * @param index_name Index name
+     * @return true if exists
+     */
+    bool IndexExists(const std::string& index_name) const;
+    
+    // =====================
     // BTree Table Access
     // =====================
     
@@ -373,6 +453,7 @@ private:
     std::unique_ptr<BTreeTable> sys_columns_;
     std::unique_ptr<BTreeTable> sys_users_;
     std::unique_ptr<BTreeTable> sys_privileges_;
+    std::unique_ptr<BTreeTable> sys_indexes_;
     
     // Cache for user tables
     std::unordered_map<std::string, std::unique_ptr<BTreeTable>> table_cache_;
@@ -380,6 +461,7 @@ private:
     // Next IDs for system tables
     int64_t next_table_id_ = 1;
     int64_t next_user_id_ = 1;
+    int64_t next_index_id_ = 1;
     
     // =====================
     // Internal Methods
@@ -411,6 +493,12 @@ private:
      * @return rowid if found, -1 otherwise
      */
     rowid_t FindUserRowId(const std::string& username) const;
+    
+    /**
+     * @brief Find index rowid by name
+     * @return rowid if found, -1 otherwise
+     */
+    rowid_t FindIndexRowId(const std::string& index_name) const;
 };
 
 } // namespace minidb

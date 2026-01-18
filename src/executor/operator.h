@@ -12,6 +12,7 @@
 
 #include "../common/types.h"
 #include "../parser/ast.h"
+#include "../btree/btree_table.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -76,15 +77,23 @@ struct OutputSchema {
  */
 class Catalog;
 class BufferPoolManager;
+class BTreeTable;
 
 struct ExecutorContext {
     Catalog* catalog = nullptr;
     BufferPoolManager* bpm = nullptr;
     // txn_id_t txn_id = INVALID_TXN_ID;  // 事务ID（Phase 8）
     
+    // Owned resources for this query (lifetime management)
+    std::vector<std::unique_ptr<BTreeTable>> owned_tables;
+    
     ExecutorContext() = default;
     ExecutorContext(Catalog* cat, BufferPoolManager* buf)
         : catalog(cat), bpm(buf) {}
+    
+    void AddOwnedTable(std::unique_ptr<BTreeTable> table) {
+        owned_tables.push_back(std::move(table));
+    }
 };
 
 /**

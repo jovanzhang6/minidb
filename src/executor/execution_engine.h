@@ -9,6 +9,8 @@
 #include "parser/parser.h"
 #include "catalog/catalog.h"
 #include "executor/executor.h"
+#include "executor/index_scan.h"
+#include "btree/btree_index.h"
 #include "txn/transaction_manager.h"
 
 namespace minidb {
@@ -90,6 +92,8 @@ private:
     ExecutionResult ExecuteCreateTable(const CreateTableStmt& stmt);
     ExecutionResult ExecuteDropTable(const DropTableStmt& stmt);
     ExecutionResult ExecuteAlterTable(const AlterTableStmt& stmt);
+    ExecutionResult ExecuteCreateIndex(const CreateIndexStmt& stmt);
+    ExecutionResult ExecuteDropIndex(const DropIndexStmt& stmt);
     ExecutionResult ExecuteInsert(const InsertStmt& stmt);
     ExecutionResult ExecuteSelect(const SelectStmt& stmt);
     ExecutionResult ExecuteDelete(const DeleteStmt& stmt);
@@ -116,6 +120,18 @@ private:
     std::unique_ptr<Operator> BuildExecutionPlan(const SelectStmt& stmt, ExecutorContext* ctx);
     std::unique_ptr<Operator> BuildTableRefOperator(const TableRef& table_ref, ExecutorContext* ctx);
     std::unique_ptr<Expression> ConvertExpression(const Expression& ast_expr, const OutputSchema* schema);
+    
+    // Index optimization helpers
+    struct IndexableCondition {
+        std::string table_name;
+        std::string column_name;
+        Value value;
+        bool valid = false;
+    };
+    IndexableCondition TryExtractIndexableCondition(const Expression* where_clause) const;
+    
+    // Owned indexes for current query (cleaned up after query)
+    std::vector<std::unique_ptr<BTreeIndex>> query_indexes_;
     
     // Convert AST privilege type to catalog privilege type
     PrivilegeType ConvertPrivilegeType(AstPrivilegeType ast_type);

@@ -113,6 +113,12 @@ ExecutionResult ExecutionEngine::Execute(const std::string& sql) {
             case StmtType::ALTER_TABLE:
                 result = ExecuteAlterTable(stmt->Get<AlterTableStmt>());
                 break;
+            case StmtType::CREATE_INDEX:
+                result = ExecuteCreateIndex(stmt->Get<CreateIndexStmt>());
+                break;
+            case StmtType::DROP_INDEX:
+                result = ExecuteDropIndex(stmt->Get<DropIndexStmt>());
+                break;
             case StmtType::SELECT:
                 result = ExecuteSelect(stmt->Get<SelectStmt>());
                 break;
@@ -477,40 +483,112 @@ std::unique_ptr<Operator> ExecutionEngine::BuildExecutionPlan(const SelectStmt& 
         throw std::runtime_error("FROM clause is required");
     }
     
+    // Clean up any previous query indexes
+    query_indexes_.clear();
+    
+    // Try to use index for simple single-table queries
+    // Conditions: single table, no joins, simple WHERE col = value
+    bool use_index = false;
+    std::unique_ptr<Operator> index_scan_op = nullptr;
+    
+    if (stmt.from_tables.size() == 1 && 
+        stmt.joins.empty() && 
+        stmt.where_clause &&
+        !stmt.from_tables[0].subquery) {
+        
+        const std::string& table_name = stmt.from_tables[0].table_name;
+        auto cond = TryExtractIndexableCondition(stmt.where_clause.get());
+        
+        if (cond.valid) {
+            // If condition has no table qualifier, assume it's for our single table
+            std::string col_table = cond.table_name.empty() ? table_name : cond.table_name;
+            
+            if (col_table == table_name || col_table == stmt.from_tables[0].alias) {
+                // Check if index exists for this column
+                auto index_info = catalog_->FindIndexByColumn(table_name, cond.column_name);
+                
+                if (index_info) {
+                    // Found an index! Use IndexScan
+                    auto table_info = catalog_->GetTableInfo(table_name);
+                    auto schema = catalog_->GetTableSchema(table_name);
+                    
+                    if (table_info && schema) {
+                        // Determine the key type from schema
+                        DataType key_type = DataType::INVALID;
+                        for (const auto& col : schema->columns) {
+                            if (col.name == cond.column_name) {
+                                key_type = col.type;
+                                break;
+                            }
+                        }
+                        
+                        if (key_type != DataType::INVALID) {
+                            // Create BTreeIndex and IndexScan
+                            auto btree_table = std::make_unique<BTreeTable>(bpm_, table_info->root_page);
+                            auto btree_index = std::make_unique<BTreeIndex>(bpm_, index_info->root_page, key_type);
+                            
+                            index_scan_op = std::make_unique<IndexScanOperator>(
+                                btree_table.get(),
+                                btree_index.get(),
+                                *schema,
+                                cond.value,
+                                table_name  // Pass table name for schema
+                            );
+                            
+                            // Store index for lifetime management
+                            query_indexes_.push_back(std::move(btree_index));
+                            // Note: btree_table lifetime needs management too
+                            // For simplicity, we store it in ctx or as a member
+                            ctx->AddOwnedTable(std::move(btree_table));
+                            
+                            use_index = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // 1. Build source operator (handling JOINs and Multi-table FROM)
     std::unique_ptr<Operator> root = nullptr;
     
-    // First table reference
-    root = BuildTableRefOperator(stmt.from_tables[0], ctx);
-    
-    // Handle implicit joins (comma separated)
-    // treated as CROSS JOINs effectively, or filtered later
-    for (size_t i = 1; i < stmt.from_tables.size(); ++i) {
-        auto right_op = BuildTableRefOperator(stmt.from_tables[i], ctx);
-        // Implicit join (CROSS JOIN)
-        root = std::make_unique<NestedLoopJoinOperator>(
-            std::move(root), 
-            std::move(right_op), 
-            JoinType::CROSS, 
-            nullptr
-        );
-    }
-    
-    // Handle explicit joins (JOIN ... ON ...)
-    for (const auto& join_clause : stmt.joins) {
-        auto right_op = BuildTableRefOperator(join_clause.right_table, ctx);
+    if (use_index && index_scan_op) {
+        // Use index scan - no need for separate filter since condition is handled by index
+        root = std::move(index_scan_op);
+    } else {
+        // Fall back to sequential scan
+        // First table reference
+        root = BuildTableRefOperator(stmt.from_tables[0], ctx);
         
-        root = std::make_unique<NestedLoopJoinOperator>(
-            std::move(root),
-            std::move(right_op),
-            join_clause.type,
-            join_clause.condition.get()
-        );
-    }
-    
-    // 2. Filter (WHERE)
-    if (stmt.where_clause) {
-        root = std::make_unique<FilterOperator>(std::move(root), stmt.where_clause.get());
+        // Handle implicit joins (comma separated)
+        // treated as CROSS JOINs effectively, or filtered later
+        for (size_t i = 1; i < stmt.from_tables.size(); ++i) {
+            auto right_op = BuildTableRefOperator(stmt.from_tables[i], ctx);
+            // Implicit join (CROSS JOIN)
+            root = std::make_unique<NestedLoopJoinOperator>(
+                std::move(root), 
+                std::move(right_op), 
+                JoinType::CROSS, 
+                nullptr
+            );
+        }
+        
+        // Handle explicit joins (JOIN ... ON ...)
+        for (const auto& join_clause : stmt.joins) {
+            auto right_op = BuildTableRefOperator(join_clause.right_table, ctx);
+            
+            root = std::make_unique<NestedLoopJoinOperator>(
+                std::move(root),
+                std::move(right_op),
+                join_clause.type,
+                join_clause.condition.get()
+            );
+        }
+        
+        // 2. Filter (WHERE) - only if not using index
+        if (stmt.where_clause) {
+            root = std::make_unique<FilterOperator>(std::move(root), stmt.where_clause.get());
+        }
     }
     
     // 3. Project (SELECT list)
@@ -944,6 +1022,150 @@ ExecutionResult ExecutionEngine::ExecuteUpdate(const UpdateStmt& stmt) {
     }
     
     return ExecutionResult::Success("Updated " + std::to_string(count) + " rows");
+}
+
+ExecutionResult ExecutionEngine::ExecuteCreateIndex(const CreateIndexStmt& stmt) {
+    // Check if table exists
+    if (!catalog_->TableExists(stmt.table_name)) {
+        return ExecutionResult::Fail("Table '" + stmt.table_name + "' does not exist");
+    }
+    
+    // Check if index already exists
+    if (catalog_->IndexExists(stmt.index_name)) {
+        if (stmt.if_not_exists) {
+            return ExecutionResult::Success("Index '" + stmt.index_name + "' already exists (IF NOT EXISTS)");
+        }
+        return ExecutionResult::Fail("Index '" + stmt.index_name + "' already exists");
+    }
+    
+    // Determine column name: prefer column_name, fall back to column_names[0]
+    std::string column_name = stmt.column_name;
+    if (column_name.empty() && !stmt.column_names.empty()) {
+        if (stmt.column_names.size() > 1) {
+            return ExecutionResult::Fail("Composite indexes are not supported. Only single-column indexes are allowed.");
+        }
+        column_name = stmt.column_names[0];
+    }
+    
+    if (column_name.empty()) {
+        return ExecutionResult::Fail("No column specified for index");
+    }
+    
+    // Get table schema to validate column
+    auto schema = catalog_->GetTableSchema(stmt.table_name);
+    if (!schema) {
+        return ExecutionResult::Fail("Failed to get schema for table '" + stmt.table_name + "'");
+    }
+    
+    // Validate column exists
+    bool column_found = false;
+    for (const auto& col : schema->columns) {
+        if (col.name == column_name) {
+            column_found = true;
+            break;
+        }
+    }
+    
+    if (!column_found) {
+        return ExecutionResult::Fail("Column '" + column_name + "' does not exist in table '" + stmt.table_name + "'");
+    }
+    
+    // Create the index through catalog
+    int64_t index_id = catalog_->CreateIndex(stmt.index_name, stmt.table_name, column_name, stmt.is_unique);
+    
+    if (index_id >= 0) {
+        return ExecutionResult::Success("Index '" + stmt.index_name + "' created successfully");
+    } else if (index_id == static_cast<int64_t>(ErrorCode::INDEX_EXISTS)) {
+        return ExecutionResult::Fail("Index '" + stmt.index_name + "' already exists");
+    } else if (index_id == static_cast<int64_t>(ErrorCode::TABLE_NOT_FOUND)) {
+        return ExecutionResult::Fail("Table '" + stmt.table_name + "' does not exist");
+    } else if (index_id == static_cast<int64_t>(ErrorCode::COLUMN_NOT_FOUND)) {
+        return ExecutionResult::Fail("Column '" + column_name + "' does not exist");
+    } else {
+        return ExecutionResult::Fail("Failed to create index");
+    }
+}
+
+ExecutionResult ExecutionEngine::ExecuteDropIndex(const DropIndexStmt& stmt) {
+    // Check if index exists
+    if (!catalog_->IndexExists(stmt.index_name)) {
+        if (stmt.if_exists) {
+            return ExecutionResult::Success("Index '" + stmt.index_name + "' does not exist (IF EXISTS)");
+        }
+        return ExecutionResult::Fail("Index '" + stmt.index_name + "' does not exist");
+    }
+    
+    // Drop the index through catalog
+    ErrorCode result = catalog_->DropIndex(stmt.index_name);
+    
+    if (result == ErrorCode::SUCCESS) {
+        return ExecutionResult::Success("Index '" + stmt.index_name + "' dropped successfully");
+    } else if (result == ErrorCode::INDEX_NOT_FOUND) {
+        return ExecutionResult::Fail("Index '" + stmt.index_name + "' does not exist");
+    } else {
+        return ExecutionResult::Fail("Failed to drop index");
+    }
+}
+
+// =====================
+// Index Optimization Helpers
+// =====================
+
+ExecutionEngine::IndexableCondition ExecutionEngine::TryExtractIndexableCondition(const Expression* where_clause) const {
+    IndexableCondition result;
+    
+    if (!where_clause) return result;
+    
+    // Only handle simple binary comparison: column = literal
+    if (where_clause->type != ExprType::BINARY_OP) return result;
+    
+    const auto* bin_expr = std::get_if<BinaryOpExpr>(&where_clause->data);
+    if (!bin_expr) return result;
+    
+    // Only handle equality
+    if (bin_expr->op != BinaryOpType::EQ) return result;
+    
+    const Expression* col_expr = nullptr;
+    const Expression* lit_expr = nullptr;
+    
+    // Try left=column, right=literal
+    if (bin_expr->left->type == ExprType::COLUMN_REF && 
+        bin_expr->right->type == ExprType::LITERAL) {
+        col_expr = bin_expr->left.get();
+        lit_expr = bin_expr->right.get();
+    }
+    // Or left=literal, right=column
+    else if (bin_expr->left->type == ExprType::LITERAL && 
+             bin_expr->right->type == ExprType::COLUMN_REF) {
+        col_expr = bin_expr->right.get();
+        lit_expr = bin_expr->left.get();
+    }
+    
+    if (!col_expr || !lit_expr) return result;
+    
+    const auto* col_ref = std::get_if<ColumnRefExpr>(&col_expr->data);
+    const auto* literal = std::get_if<LiteralExpr>(&lit_expr->data);
+    
+    if (!col_ref || !literal) return result;
+    
+    result.table_name = col_ref->table_name;
+    result.column_name = col_ref->column_name;
+    
+    // Convert LiteralValue to Value
+    if (std::holds_alternative<int64_t>(literal->value)) {
+        result.value = Value(std::get<int64_t>(literal->value));
+    } else if (std::holds_alternative<double>(literal->value)) {
+        result.value = Value(std::get<double>(literal->value));
+    } else if (std::holds_alternative<std::string>(literal->value)) {
+        result.value = Value(std::get<std::string>(literal->value));
+    } else {
+        // NULL or unsupported - can't use index efficiently
+        return result;
+    }
+    
+    result.valid = true;
+    
+    return result;
 }
 
 } // namespace minidb

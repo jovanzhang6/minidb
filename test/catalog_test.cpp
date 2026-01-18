@@ -71,10 +71,10 @@ private:
             err = catalog.Initialize(true);
             REQUIRE(err == ErrorCode::SUCCESS);
             
-            // Verify default admin user exists
-            auto admin = catalog.GetUserInfo("admin");
+            // Verify default root user exists
+            auto admin = catalog.GetUserInfo("root");
             REQUIRE(admin.has_value());
-            REQUIRE(admin->username == "admin");
+            REQUIRE(admin->username == "root");
             REQUIRE(admin->is_admin == true);
             
             // No tables should exist initially
@@ -342,8 +342,8 @@ private:
             auth = catalog.AuthenticateUser("bob", "password");
             REQUIRE(!auth.has_value());
             
-            // Admin authentication
-            auth = catalog.AuthenticateUser("admin", "admin");
+            // Admin authentication (root/123456)
+            auth = catalog.AuthenticateUser("root", "123456");
             REQUIRE(auth.has_value());
             REQUIRE(auth->is_admin == true);
             

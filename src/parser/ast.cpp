@@ -138,6 +138,7 @@ std::string StmtTypeToString(StmtType type) {
         case StmtType::DROP_TABLE:   return "DROP_TABLE";
         case StmtType::ALTER_TABLE:  return "ALTER_TABLE";
         case StmtType::CREATE_INDEX: return "CREATE_INDEX";
+        case StmtType::DROP_INDEX:   return "DROP_INDEX";
         case StmtType::INSERT:       return "INSERT";
         case StmtType::UPDATE:       return "UPDATE";
         case StmtType::DELETE_STMT:  return "DELETE";

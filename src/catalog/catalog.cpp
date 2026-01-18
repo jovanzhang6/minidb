@@ -108,6 +108,34 @@ PrivilegeInfo PrivilegeInfo::FromRecord(const Record& record) {
 }
 
 // =====================
+// IndexInfo serialization
+// =====================
+
+Record IndexInfo::ToRecord() const {
+    Record record;
+    record.values.push_back(Value(index_id));
+    record.values.push_back(Value(index_name));
+    record.values.push_back(Value(table_id));
+    record.values.push_back(Value(static_cast<int64_t>(column_id)));
+    record.values.push_back(Value(static_cast<int64_t>(root_page)));
+    record.values.push_back(Value(static_cast<int64_t>(is_unique ? 1 : 0)));
+    return record;
+}
+
+IndexInfo IndexInfo::FromRecord(const Record& record) {
+    IndexInfo info;
+    if (record.values.size() >= 6) {
+        info.index_id = record.values[0].GetInt();
+        info.index_name = record.values[1].GetText();
+        info.table_id = record.values[2].GetInt();
+        info.column_id = static_cast<int32_t>(record.values[3].GetInt());
+        info.root_page = static_cast<page_id_t>(record.values[4].GetInt());
+        info.is_unique = (record.values[5].GetInt() != 0);
+    }
+    return info;
+}
+
+// =====================
 // Catalog Implementation
 // =====================
 
@@ -125,16 +153,17 @@ ErrorCode Catalog::InitializeNewDatabase() {
     // For a new database, we want to create system tables with fresh B-trees.
     // BTreeTable will allocate its own root page when given INVALID_PAGE_ID.
     // Since pages are allocated sequentially starting from 1, we create the
-    // system tables in order and they'll get pages 1, 2, 3, 4.
+    // system tables in order and they'll get pages 1, 2, 3, 4, 5.
     
-    // Create system B-tree tables (they will allocate pages 1, 2, 3, 4)
+    // Create system B-tree tables (they will allocate pages 1, 2, 3, 4, 5)
     sys_tables_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     sys_columns_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     sys_users_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     sys_privileges_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
+    sys_indexes_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     
     // Store the actual root page IDs (in case they differ from expected)
-    // For persistence, we rely on the fixed page IDs: 1, 2, 3, 4
+    // For persistence, we rely on the fixed page IDs: 1, 2, 3, 4, 5
     // If allocation gives different IDs, we have a problem with persistence
     
     // Create default root user with password '123456'
@@ -149,6 +178,7 @@ ErrorCode Catalog::LoadExistingDatabase() {
     sys_columns_ = std::make_unique<BTreeTable>(bpm_, SYS_COLUMNS_ROOT_PAGE);
     sys_users_ = std::make_unique<BTreeTable>(bpm_, SYS_USERS_ROOT_PAGE);
     sys_privileges_ = std::make_unique<BTreeTable>(bpm_, SYS_PRIVILEGES_ROOT_PAGE);
+    sys_indexes_ = std::make_unique<BTreeTable>(bpm_, SYS_INDEXES_ROOT_PAGE);
     
     // Restore next_rowid_ for each system table by finding max rowid
     rowid_t max_rowid_tables = 0;
@@ -195,6 +225,19 @@ ErrorCode Catalog::LoadExistingDatabase() {
         }
     });
     sys_privileges_->SetNextRowId(max_rowid_privileges > 0 ? max_rowid_privileges : 1);
+    
+    // Find max index_id and max rowid for sys_indexes
+    rowid_t max_rowid_indexes = 0;
+    sys_indexes_->Scan([this, &max_rowid_indexes](rowid_t rowid, const Record& rec) {
+        if (rowid >= max_rowid_indexes) {
+            max_rowid_indexes = rowid + 1;
+        }
+        IndexInfo info = IndexInfo::FromRecord(rec);
+        if (info.index_id >= next_index_id_) {
+            next_index_id_ = info.index_id + 1;
+        }
+    });
+    sys_indexes_->SetNextRowId(max_rowid_indexes > 0 ? max_rowid_indexes : 1);
     
     return ErrorCode::SUCCESS;
 }
@@ -749,6 +792,172 @@ BTreeTable* Catalog::GetOrCreateBTreeTable(const std::string& table_name,
     BTreeTable* ptr = btree.get();
     table_cache_[table_name] = std::move(btree);
     return ptr;
+}
+
+// =====================
+// Index Operations
+// =====================
+
+int64_t Catalog::CreateIndex(const std::string& index_name,
+                              const std::string& table_name,
+                              const std::string& column_name,
+                              bool is_unique) {
+    // Check if index already exists
+    if (IndexExists(index_name)) {
+        return static_cast<int64_t>(ErrorCode::DUPLICATE_KEY);
+    }
+    
+    // Get table info
+    auto table_info = GetTableInfo(table_name);
+    if (!table_info) {
+        return static_cast<int64_t>(ErrorCode::TABLE_NOT_FOUND);
+    }
+    
+    // Find column
+    auto columns = GetTableColumns(table_info->table_id);
+    int32_t column_id = -1;
+    for (const auto& col : columns) {
+        if (col.column_name == column_name) {
+            column_id = col.column_id;
+            break;
+        }
+    }
+    if (column_id < 0) {
+        return static_cast<int64_t>(ErrorCode::COLUMN_NOT_FOUND);
+    }
+    
+    // Create the B-tree for index (allocates a new page)
+    auto btree = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
+    page_id_t root_page = btree->GetRootPageId();
+    
+    // Create index info
+    IndexInfo index_info;
+    index_info.index_id = next_index_id_++;
+    index_info.index_name = index_name;
+    index_info.table_id = table_info->table_id;
+    index_info.column_id = column_id;
+    index_info.root_page = root_page;
+    index_info.is_unique = is_unique;
+    
+    // Insert into sys_indexes
+    rowid_t index_rowid = sys_indexes_->InsertAuto(index_info.ToRecord());
+    if (index_rowid < 0) {
+        return static_cast<int64_t>(ErrorCode::IO_ERROR);
+    }
+    
+    // Build the index: scan table and insert all existing rows
+    BTreeTable* data_table = GetBTreeTable(table_name);
+    if (data_table) {
+        data_table->Scan([&](rowid_t rowid, const Record& rec) {
+            if (column_id < static_cast<int32_t>(rec.values.size())) {
+                // For index, we store (column_value, rowid) as key
+                // Using rowid as key and column_value + rowid as record
+                // This is simplified: we store in index B-tree: rowid -> column_value
+                // Actual lookup will scan index for matching values
+                Record index_rec;
+                index_rec.values.push_back(rec.values[column_id]);  // indexed column value
+                index_rec.values.push_back(Value(rowid));           // pointer to data row
+                btree->Insert(rowid, index_rec);
+            }
+        });
+    }
+    
+    return index_info.index_id;
+}
+
+ErrorCode Catalog::DropIndex(const std::string& index_name) {
+    rowid_t rowid = FindIndexRowId(index_name);
+    if (rowid < 0) {
+        return ErrorCode::INDEX_NOT_FOUND;
+    }
+    
+    // Delete from sys_indexes
+    if (!sys_indexes_->Delete(rowid)) {
+        return ErrorCode::IO_ERROR;
+    }
+    
+    // Note: We don't deallocate index pages (would need page freelist management)
+    
+    return ErrorCode::SUCCESS;
+}
+
+std::optional<IndexInfo> Catalog::GetIndexInfo(const std::string& index_name) const {
+    std::optional<IndexInfo> result;
+    
+    sys_indexes_->Scan([&](rowid_t, const Record& rec) {
+        IndexInfo info = IndexInfo::FromRecord(rec);
+        if (info.index_name == index_name) {
+            result = info;
+        }
+    });
+    
+    return result;
+}
+
+std::vector<IndexInfo> Catalog::GetTableIndexes(const std::string& table_name) const {
+    std::vector<IndexInfo> indexes;
+    
+    auto table_info = GetTableInfo(table_name);
+    if (!table_info) {
+        return indexes;
+    }
+    
+    sys_indexes_->Scan([&](rowid_t, const Record& rec) {
+        IndexInfo info = IndexInfo::FromRecord(rec);
+        if (info.table_id == table_info->table_id) {
+            indexes.push_back(info);
+        }
+    });
+    
+    return indexes;
+}
+
+std::optional<IndexInfo> Catalog::FindIndexByColumn(const std::string& table_name,
+                                                     const std::string& column_name) const {
+    auto table_info = GetTableInfo(table_name);
+    if (!table_info) {
+        return std::nullopt;
+    }
+    
+    // Find column_id
+    auto columns = GetTableColumns(table_info->table_id);
+    int32_t column_id = -1;
+    for (const auto& col : columns) {
+        if (col.column_name == column_name) {
+            column_id = col.column_id;
+            break;
+        }
+    }
+    if (column_id < 0) {
+        return std::nullopt;
+    }
+    
+    std::optional<IndexInfo> result;
+    sys_indexes_->Scan([&](rowid_t, const Record& rec) {
+        IndexInfo info = IndexInfo::FromRecord(rec);
+        if (info.table_id == table_info->table_id && info.column_id == column_id) {
+            result = info;
+        }
+    });
+    
+    return result;
+}
+
+bool Catalog::IndexExists(const std::string& index_name) const {
+    return GetIndexInfo(index_name).has_value();
+}
+
+rowid_t Catalog::FindIndexRowId(const std::string& index_name) const {
+    rowid_t found_rowid = -1;
+    
+    sys_indexes_->Scan([&](rowid_t rowid, const Record& rec) {
+        IndexInfo info = IndexInfo::FromRecord(rec);
+        if (info.index_name == index_name) {
+            found_rowid = rowid;
+        }
+    });
+    
+    return found_rowid;
 }
 
 } // namespace minidb
