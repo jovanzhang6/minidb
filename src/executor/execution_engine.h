@@ -59,6 +59,7 @@ private:
     // Executors for different statement types
     ExecutionResult ExecuteCreateTable(const CreateTableStmt& stmt);
     ExecutionResult ExecuteDropTable(const DropTableStmt& stmt);
+    ExecutionResult ExecuteAlterTable(const AlterTableStmt& stmt);
     ExecutionResult ExecuteInsert(const InsertStmt& stmt);
     ExecutionResult ExecuteSelect(const SelectStmt& stmt);
     ExecutionResult ExecuteDelete(const DeleteStmt& stmt);

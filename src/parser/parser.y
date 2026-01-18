@@ -339,6 +339,18 @@ alter_table_stmt:
         delete $6;
         $$ = stmt;
     }
+    | ALTER TABLE IDENTIFIER RENAME TO IDENTIFIER {
+        auto stmt = new Statement();
+        stmt->type = StmtType::ALTER_TABLE;
+        AlterTableStmt alter_stmt;
+        alter_stmt.table_name = *$3;
+        alter_stmt.alter_type = AlterType::RENAME_TABLE;
+        alter_stmt.new_table_name = *$6;
+        stmt->data = std::move(alter_stmt);
+        delete $3;
+        delete $6;
+        $$ = stmt;
+    }
     ;
 
 /* CREATE INDEX */

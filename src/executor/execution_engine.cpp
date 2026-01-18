@@ -43,6 +43,9 @@ ExecutionResult ExecutionEngine::Execute(const std::string& sql) {
             case StmtType::DROP_TABLE:
                 result = ExecuteDropTable(stmt->Get<DropTableStmt>());
                 break;
+            case StmtType::ALTER_TABLE:
+                result = ExecuteAlterTable(stmt->Get<AlterTableStmt>());
+                break;
             case StmtType::SELECT:
                 result = ExecuteSelect(stmt->Get<SelectStmt>());
                 break;
@@ -126,6 +129,42 @@ ExecutionResult ExecutionEngine::ExecuteDropTable(const DropTableStmt& stmt) {
     }
     
     return ExecutionResult::Success("Table dropped successfully");
+}
+
+ExecutionResult ExecutionEngine::ExecuteAlterTable(const AlterTableStmt& stmt) {
+    // 检查表是否存在
+    if (!catalog_->TableExists(stmt.table_name)) {
+        return ExecutionResult::Fail("Table does not exist: " + stmt.table_name);
+    }
+    
+    ErrorCode err = ErrorCode::SUCCESS;
+    
+    switch (stmt.alter_type) {
+        case AlterType::ADD_COLUMN:
+            err = catalog_->AddColumn(stmt.table_name, stmt.column_def);
+            if (err != ErrorCode::SUCCESS) {
+                return ExecutionResult::Fail("Failed to add column (ErrorCode: " + std::to_string(static_cast<int>(err)) + ")");
+            }
+            return ExecutionResult::Success("Column added successfully");
+            
+        case AlterType::RENAME_TABLE:
+            err = catalog_->RenameTable(stmt.table_name, stmt.new_table_name);
+            if (err != ErrorCode::SUCCESS) {
+                if (err == ErrorCode::DUPLICATE_KEY) {
+                    return ExecutionResult::Fail("Table already exists: " + stmt.new_table_name);
+                }
+                return ExecutionResult::Fail("Failed to rename table (ErrorCode: " + std::to_string(static_cast<int>(err)) + ")");
+            }
+            return ExecutionResult::Success("Table renamed successfully");
+            
+        case AlterType::DROP_COLUMN:
+        case AlterType::RENAME_COLUMN:
+        case AlterType::ALTER_COLUMN_TYPE:
+            return ExecutionResult::Fail("Unsupported ALTER TABLE operation. Only ADD COLUMN and RENAME TO are supported.");
+            
+        default:
+            return ExecutionResult::Fail("Unknown ALTER TABLE operation");
+    }
 }
 
 ExecutionResult ExecutionEngine::ExecuteCreateUser(const CreateUserStmt& stmt) {

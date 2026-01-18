@@ -31,7 +31,13 @@ void close_database() {
     g_execution_engine.reset();
     g_catalog.reset();
     g_txn_manager.reset();
+    
+    // Flush all dirty pages to disk before closing
+    if (g_bpm) {
+        g_bpm->FlushAllPages();
+    }
     g_bpm.reset();
+    
     if (g_disk_manager) {
         g_disk_manager->Close();
         g_disk_manager.reset();
@@ -133,7 +139,7 @@ void print_result(const ExecutionResult& result) {
         std::cout << result.message << std::endl;
     }
     
-    if (result.schema && !result.tuples.empty()) {
+    if (result.schema) {
         // Print header
         const auto& columns = result.schema->columns;
         for (size_t i = 0; i < columns.size(); ++i) {

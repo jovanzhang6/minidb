@@ -251,6 +251,14 @@ public:
                            const std::string& old_name, 
                            const std::string& new_name);
     
+    /**
+     * @brief Rename a table
+     * @param old_name Old table name
+     * @param new_name New table name
+     * @return ErrorCode::SUCCESS on success
+     */
+    ErrorCode RenameTable(const std::string& old_name, const std::string& new_name);
+    
     // =====================
     // User Operations (DCL)
     // =====================

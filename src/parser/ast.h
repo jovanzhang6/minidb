@@ -279,6 +279,7 @@ enum class AlterType {
     DROP_COLUMN,
     RENAME_COLUMN,
     ALTER_COLUMN_TYPE,
+    RENAME_TABLE,
 };
 
 /**
@@ -289,7 +290,8 @@ struct AlterTableStmt {
     AlterType alter_type;
     ColumnDef column_def;           // ADD COLUMN 使用
     std::string old_column_name;    // RENAME/DROP/ALTER 使用
-    std::string new_column_name;    // RENAME 使用
+    std::string new_column_name;    // RENAME COLUMN 使用
+    std::string new_table_name;     // RENAME TABLE 使用
     DataType new_type;              // ALTER COLUMN TYPE 使用
 };
 

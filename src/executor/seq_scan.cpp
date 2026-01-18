@@ -83,6 +83,12 @@ bool SeqScanOperator::Next(Tuple* tuple) {
     tuple->rid = iterator_.GetRowId();
     tuple->values = std::move(record->values);
     
+    // 如果记录的列数少于 schema 定义的列数（比如 ADD COLUMN 后），填充 NULL
+    size_t schema_col_count = output_schema_.columns.size();
+    while (tuple->values.size() < schema_col_count) {
+        tuple->values.push_back(Value());  // NULL 值
+    }
+    
     // 移动到下一条
     iterator_.Next();
     

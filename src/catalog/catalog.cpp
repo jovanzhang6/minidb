@@ -150,20 +150,51 @@ ErrorCode Catalog::LoadExistingDatabase() {
     sys_users_ = std::make_unique<BTreeTable>(bpm_, SYS_USERS_ROOT_PAGE);
     sys_privileges_ = std::make_unique<BTreeTable>(bpm_, SYS_PRIVILEGES_ROOT_PAGE);
     
-    // Find max table_id and user_id
-    sys_tables_->Scan([this](rowid_t, const Record& rec) {
+    // Restore next_rowid_ for each system table by finding max rowid
+    rowid_t max_rowid_tables = 0;
+    rowid_t max_rowid_columns = 0;
+    rowid_t max_rowid_users = 0;
+    rowid_t max_rowid_privileges = 0;
+    
+    // Find max table_id and max rowid for sys_tables
+    sys_tables_->Scan([this, &max_rowid_tables](rowid_t rowid, const Record& rec) {
+        if (rowid >= max_rowid_tables) {
+            max_rowid_tables = rowid + 1;
+        }
         TableInfo info = TableInfo::FromRecord(rec);
         if (info.table_id >= next_table_id_) {
             next_table_id_ = info.table_id + 1;
         }
     });
+    sys_tables_->SetNextRowId(max_rowid_tables > 0 ? max_rowid_tables : 1);
     
-    sys_users_->Scan([this](rowid_t, const Record& rec) {
+    // Find max rowid for sys_columns
+    sys_columns_->Scan([&max_rowid_columns](rowid_t rowid, const Record&) {
+        if (rowid >= max_rowid_columns) {
+            max_rowid_columns = rowid + 1;
+        }
+    });
+    sys_columns_->SetNextRowId(max_rowid_columns > 0 ? max_rowid_columns : 1);
+    
+    // Find max user_id and max rowid for sys_users
+    sys_users_->Scan([this, &max_rowid_users](rowid_t rowid, const Record& rec) {
+        if (rowid >= max_rowid_users) {
+            max_rowid_users = rowid + 1;
+        }
         UserInfo info = UserInfo::FromRecord(rec);
         if (info.user_id >= next_user_id_) {
             next_user_id_ = info.user_id + 1;
         }
     });
+    sys_users_->SetNextRowId(max_rowid_users > 0 ? max_rowid_users : 1);
+    
+    // Find max rowid for sys_privileges
+    sys_privileges_->Scan([&max_rowid_privileges](rowid_t rowid, const Record&) {
+        if (rowid >= max_rowid_privileges) {
+            max_rowid_privileges = rowid + 1;
+        }
+    });
+    sys_privileges_->SetNextRowId(max_rowid_privileges > 0 ? max_rowid_privileges : 1);
     
     return ErrorCode::SUCCESS;
 }
@@ -426,6 +457,39 @@ ErrorCode Catalog::RenameColumn(const std::string& table_name,
     
     target_col.column_name = new_name;
     sys_columns_->Update(target_rowid, target_col.ToRecord());
+    
+    return ErrorCode::SUCCESS;
+}
+
+ErrorCode Catalog::RenameTable(const std::string& old_name, const std::string& new_name) {
+    // Check if old table exists
+    auto table_info = GetTableInfo(old_name);
+    if (!table_info) {
+        return ErrorCode::TABLE_NOT_FOUND;
+    }
+    
+    // Check if new name already exists
+    if (TableExists(new_name)) {
+        return ErrorCode::DUPLICATE_KEY;
+    }
+    
+    // Find the rowid in sys_tables
+    rowid_t target_rowid = -1;
+    sys_tables_->Scan([&](rowid_t rowid, const Record& rec) {
+        TableInfo info = TableInfo::FromRecord(rec);
+        if (info.table_name == old_name) {
+            target_rowid = rowid;
+        }
+    });
+    
+    if (target_rowid < 0) {
+        return ErrorCode::TABLE_NOT_FOUND;
+    }
+    
+    // Update table name
+    TableInfo updated_info = *table_info;
+    updated_info.table_name = new_name;
+    sys_tables_->Update(target_rowid, updated_info.ToRecord());
     
     return ErrorCode::SUCCESS;
 }
