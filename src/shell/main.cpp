@@ -9,6 +9,7 @@
 #include <vector>
 #include <iomanip>
 #include <csignal>
+#include <fstream>
 
 #include "storage/disk_manager.h"
 #include "buffer/buffer_pool_manager.h"
@@ -26,6 +27,7 @@ std::unique_ptr<BufferPoolManager> g_bpm;
 std::unique_ptr<TransactionManager> g_txn_manager;
 std::unique_ptr<Catalog> g_catalog;
 std::unique_ptr<ExecutionEngine> g_execution_engine;
+std::string g_current_db_file;  // 当前打开的数据库文件路径
 
 void close_database() {
     g_execution_engine.reset();
@@ -42,6 +44,19 @@ void close_database() {
         g_disk_manager->Close();
         g_disk_manager.reset();
     }
+    g_current_db_file.clear();
+}
+
+// 文件复制辅助函数
+bool copy_file(const std::string& src, const std::string& dst) {
+    std::ifstream in(src, std::ios::binary);
+    if (!in) return false;
+    
+    std::ofstream out(dst, std::ios::binary);
+    if (!out) return false;
+    
+    out << in.rdbuf();
+    return out.good();
 }
 
 void open_database(const std::string& db_file) {
@@ -90,7 +105,8 @@ void open_database(const std::string& db_file) {
     
     g_execution_engine = std::make_unique<ExecutionEngine>(
         g_catalog.get(), g_bpm.get(), g_txn_manager.get());
-        
+    
+    g_current_db_file = db_file;  // 保存当前数据库路径
     std::cout << "Database opened: " << db_file << std::endl;
 }
 
@@ -120,6 +136,8 @@ void print_help() {
     std::cout << ".close         Close current database" << std::endl;
     std::cout << ".tables        List all tables" << std::endl;
     std::cout << ".schema        Show schema of all tables" << std::endl;
+    std::cout << ".backup        Backup database to .db.bak file" << std::endl;
+    std::cout << ".restore       Restore database from .db.bak file" << std::endl;
     std::cout << ".quit          Exit this program" << std::endl;
 }
 
@@ -249,6 +267,49 @@ void run_repl() {
                      }
                 } else {
                      std::cout << "Error: No database open" << std::endl;
+                }
+            } else if (line == ".backup") {
+                if (g_current_db_file.empty()) {
+                    std::cout << "Error: No database open" << std::endl;
+                } else {
+                    // 先刷新所有脏页到磁盘
+                    if (g_bpm) {
+                        g_bpm->FlushAllPages();
+                    }
+                    
+                    std::string backup_file = g_current_db_file + ".bak";
+                    if (copy_file(g_current_db_file, backup_file)) {
+                        std::cout << "Backup created: " << backup_file << std::endl;
+                    } else {
+                        std::cout << "Error: Failed to create backup" << std::endl;
+                    }
+                }
+            } else if (line == ".restore") {
+                if (g_current_db_file.empty()) {
+                    std::cout << "Error: No database open" << std::endl;
+                } else {
+                    std::string backup_file = g_current_db_file + ".bak";
+                    std::string db_file = g_current_db_file;
+                    
+                    // 检查备份文件是否存在
+                    std::ifstream check(backup_file, std::ios::binary);
+                    if (!check) {
+                        std::cout << "Error: Backup file not found: " << backup_file << std::endl;
+                    } else {
+                        check.close();
+                        
+                        // 关闭当前数据库
+                        close_database();
+                        
+                        // 用备份文件覆盖原文件
+                        if (copy_file(backup_file, db_file)) {
+                            // 重新打开数据库
+                            open_database(db_file);
+                            std::cout << "Database restored from: " << backup_file << std::endl;
+                        } else {
+                            std::cout << "Error: Failed to restore database" << std::endl;
+                        }
+                    }
                 }
             } else {
                 std::cout << "Unknown command: " << line << std::endl;
