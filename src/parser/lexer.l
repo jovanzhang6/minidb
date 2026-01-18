@@ -19,6 +19,12 @@
 #define fileno _fileno
 #endif
 
+// Windows MinGW 兼容性
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#include <io.h>
+#define isatty _isatty
+#endif
+
 #include <string>
 #include <cstdlib>
 #include "parser/ast.h"

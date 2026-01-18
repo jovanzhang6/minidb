@@ -124,7 +124,7 @@ endif()
 
 # 主程序
 add_executable(minidb src/shell/main.cpp)
-target_link_libraries(minidb minidb_parser minidb_core)
+target_link_libraries(minidb minidb_core minidb_parser minidb_core)
 
 # 测试
 enable_testing()

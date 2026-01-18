@@ -248,13 +248,6 @@ std::unique_ptr<Operator> ExecutionEngine::BuildTableRefOperator(const TableRef&
         }
         return sub_plan;
     }
-             // The subquery returns columns effectively "anonymous" or keeping original names.
-             // If we really want to support subquery aliases, we need to enforce it.
-             
-             // For now, let's just return sub_plan. Alias support for subqueries might be partial.
-        }
-        return sub_plan;
-    }
 
     if (!catalog_->TableExists(table_ref.table_name)) {
         throw std::runtime_error("Table not found: " + table_ref.table_name);
