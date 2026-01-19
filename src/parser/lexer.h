@@ -33,6 +33,7 @@ enum class TokenType {
     ALTER,
     TABLE,
     INDEX,
+    VIEW,
     COLUMN,
     ADD,
     RENAME,

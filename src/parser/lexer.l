@@ -71,6 +71,7 @@ COMMENT     "--"[^\n]*
 "ALTER"         { return ALTER; }
 "TABLE"         { return TABLE; }
 "INDEX"         { return INDEX; }
+"VIEW"          { return VIEW; }
 "COLUMN"        { return COLUMN; }
 "ADD"           { return ADD; }
 "RENAME"        { return RENAME; }

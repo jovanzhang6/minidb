@@ -168,6 +168,47 @@ DROP TABLE scores;
 DROP TABLE IF EXISTS nonexistent_table;
 ```
 
+### 2.4 创建视图 (CREATE VIEW)
+
+视图是基于 SELECT 语句的虚拟表，可以简化复杂查询。
+
+```sql
+-- 准备测试数据
+CREATE TABLE employees (id INT, name TEXT, age INT, dept TEXT);
+INSERT INTO employees VALUES (1, 'Alice', 28, 'Engineering');
+INSERT INTO employees VALUES (2, 'Bob', 22, 'Sales');
+INSERT INTO employees VALUES (3, 'Charlie', 35, 'Engineering');
+INSERT INTO employees VALUES (4, 'David', 19, 'Marketing');
+INSERT INTO employees VALUES (5, 'Eva', 31, 'Engineering');
+
+-- 创建简单视图
+CREATE VIEW senior_employees AS SELECT * FROM employees WHERE age >= 25;
+
+-- 查询视图（与查询表相同）
+SELECT * FROM senior_employees;
+-- 预期结果：Alice(28), Charlie(35), Eva(31)
+
+-- 带 IF NOT EXISTS 创建
+CREATE VIEW IF NOT EXISTS senior_employees AS SELECT * FROM employees WHERE age >= 30;
+
+-- 视图上的条件查询
+SELECT name, age FROM senior_employees WHERE dept = 'Engineering';
+-- 预期结果：Alice, Charlie, Eva
+```
+
+### 2.5 删除视图 (DROP VIEW)
+
+```sql
+-- 基本删除
+DROP VIEW senior_employees;
+
+-- 带 IF EXISTS
+DROP VIEW IF EXISTS nonexistent_view;
+
+-- 验证视图已删除
+SELECT * FROM senior_employees;  -- 报错：Table not found
+```
+
 ---
 
 ## 3. 数据操作语言 (DML)

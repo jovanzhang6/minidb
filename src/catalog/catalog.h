@@ -36,7 +36,8 @@ constexpr page_id_t SYS_COLUMNS_ROOT_PAGE = 2;
 constexpr page_id_t SYS_USERS_ROOT_PAGE = 3;
 constexpr page_id_t SYS_PRIVILEGES_ROOT_PAGE = 4;
 constexpr page_id_t SYS_INDEXES_ROOT_PAGE = 5;
-constexpr page_id_t FIRST_USER_PAGE = 6;
+constexpr page_id_t SYS_VIEWS_ROOT_PAGE = 6;
+constexpr page_id_t FIRST_USER_PAGE = 7;
 
 // System table names
 constexpr const char* SYS_TABLES_NAME = "sys_tables";
@@ -44,6 +45,7 @@ constexpr const char* SYS_COLUMNS_NAME = "sys_columns";
 constexpr const char* SYS_USERS_NAME = "sys_users";
 constexpr const char* SYS_PRIVILEGES_NAME = "sys_privileges";
 constexpr const char* SYS_INDEXES_NAME = "sys_indexes";
+constexpr const char* SYS_VIEWS_NAME = "sys_views";
 
 /**
  * @brief Table metadata stored in sys_tables
@@ -160,6 +162,24 @@ struct IndexInfo {
     
     Record ToRecord() const;
     static IndexInfo FromRecord(const Record& record);
+};
+
+/**
+ * @brief View metadata stored in sys_views
+ * 
+ * sys_views schema:
+ * - rowid: auto-generated
+ * - view_id (INT): unique view identifier
+ * - view_name (TEXT): unique view name
+ * - view_definition (TEXT): the SELECT SQL that defines the view
+ */
+struct ViewInfo {
+    int64_t view_id = 0;
+    std::string view_name;
+    std::string view_definition;  // 原始 SELECT SQL 文本
+    
+    Record ToRecord() const;
+    static ViewInfo FromRecord(const Record& record);
 };
 
 /**
@@ -427,6 +447,45 @@ public:
     bool IndexExists(const std::string& index_name) const;
     
     // =====================
+    // View Operations
+    // =====================
+    
+    /**
+     * @brief Create a new view
+     * @param view_name View name
+     * @param definition SELECT SQL that defines the view
+     * @return view_id on success, negative ErrorCode on failure
+     */
+    int64_t CreateView(const std::string& view_name, const std::string& definition);
+    
+    /**
+     * @brief Drop a view
+     * @param view_name View name
+     * @return ErrorCode::SUCCESS on success
+     */
+    ErrorCode DropView(const std::string& view_name);
+    
+    /**
+     * @brief Get view info by name
+     * @param view_name View name
+     * @return ViewInfo if found
+     */
+    std::optional<ViewInfo> GetViewInfo(const std::string& view_name) const;
+    
+    /**
+     * @brief Check if view exists
+     * @param view_name View name
+     * @return true if exists
+     */
+    bool ViewExists(const std::string& view_name) const;
+    
+    /**
+     * @brief Get all view names
+     * @return Vector of view names
+     */
+    std::vector<std::string> GetAllViewNames() const;
+    
+    // =====================
     // BTree Table Access
     // =====================
     
@@ -454,6 +513,7 @@ private:
     std::unique_ptr<BTreeTable> sys_users_;
     std::unique_ptr<BTreeTable> sys_privileges_;
     std::unique_ptr<BTreeTable> sys_indexes_;
+    std::unique_ptr<BTreeTable> sys_views_;
     
     // Cache for user tables
     std::unordered_map<std::string, std::unique_ptr<BTreeTable>> table_cache_;
@@ -462,6 +522,7 @@ private:
     int64_t next_table_id_ = 1;
     int64_t next_user_id_ = 1;
     int64_t next_index_id_ = 1;
+    int64_t next_view_id_ = 1;
     
     // =====================
     // Internal Methods
@@ -499,6 +560,12 @@ private:
      * @return rowid if found, -1 otherwise
      */
     rowid_t FindIndexRowId(const std::string& index_name) const;
+    
+    /**
+     * @brief Find view rowid by name
+     * @return rowid if found, -1 otherwise
+     */
+    rowid_t FindViewRowId(const std::string& view_name) const;
 };
 
 } // namespace minidb

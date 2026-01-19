@@ -94,6 +94,8 @@ private:
     ExecutionResult ExecuteAlterTable(const AlterTableStmt& stmt);
     ExecutionResult ExecuteCreateIndex(const CreateIndexStmt& stmt);
     ExecutionResult ExecuteDropIndex(const DropIndexStmt& stmt);
+    ExecutionResult ExecuteCreateView(const CreateViewStmt& stmt, const std::string& original_sql);
+    ExecutionResult ExecuteDropView(const DropViewStmt& stmt);
     ExecutionResult ExecuteInsert(const InsertStmt& stmt);
     ExecutionResult ExecuteSelect(const SelectStmt& stmt);
     ExecutionResult ExecuteDelete(const DeleteStmt& stmt);
@@ -115,6 +117,9 @@ private:
     
     // Temporary expressions (owned by ExecutionEngine, cleared per execution)
     std::vector<std::unique_ptr<Expression>> temporary_exprs_;
+    
+    // Temporary parsed statements for view expansion (cleared per execution)
+    std::vector<std::unique_ptr<Statement>> temporary_view_stmts_;
     
     // Helpers
     std::unique_ptr<Operator> BuildExecutionPlan(const SelectStmt& stmt, ExecutorContext* ctx);

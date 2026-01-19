@@ -228,6 +228,8 @@ enum class StmtType {
     ALTER_TABLE,
     CREATE_INDEX,
     DROP_INDEX,
+    CREATE_VIEW,
+    DROP_VIEW,
     
     // DML
     INSERT,
@@ -313,6 +315,23 @@ struct CreateIndexStmt {
  */
 struct DropIndexStmt {
     std::string index_name;
+    bool if_exists = false;
+};
+
+/**
+ * @brief CREATE VIEW语句
+ */
+struct CreateViewStmt {
+    std::string view_name;
+    std::string view_definition;  // 原始 SELECT SQL 文本
+    bool if_not_exists = false;
+};
+
+/**
+ * @brief DROP VIEW语句
+ */
+struct DropViewStmt {
+    std::string view_name;
     bool if_exists = false;
 };
 
@@ -513,6 +532,8 @@ struct Statement {
         AlterTableStmt,
         CreateIndexStmt,
         DropIndexStmt,
+        CreateViewStmt,
+        DropViewStmt,
         InsertStmt,
         UpdateStmt,
         DeleteStmt,

@@ -96,7 +96,7 @@ using namespace minidb;
 }
 
 /* Token定义 - 关键字 */
-%token CREATE DROP ALTER TABLE INDEX COLUMN ADD RENAME TO TYPE UNIQUE IF EXISTS
+%token CREATE DROP ALTER TABLE INDEX VIEW COLUMN ADD RENAME TO TYPE UNIQUE IF EXISTS
 %token INSERT INTO VALUES UPDATE SET DELETE
 %token SELECT FROM WHERE AS DISTINCT ALL ORDER BY ASC DESC LIMIT OFFSET GROUP HAVING
 %token JOIN INNER LEFT RIGHT FULL OUTER CROSS ON
@@ -121,6 +121,7 @@ using namespace minidb;
 /* 非终结符类型 */
 %type <stmt> statement ddl_statement dml_statement dcl_statement tcl_statement
 %type <stmt> create_table_stmt drop_table_stmt alter_table_stmt create_index_stmt drop_index_stmt
+%type <stmt> create_view_stmt drop_view_stmt
 %type <stmt> insert_stmt update_stmt delete_stmt select_stmt
 %type <stmt> create_user_stmt drop_user_stmt grant_stmt revoke_stmt
 %type <stmt> begin_stmt commit_stmt rollback_stmt
@@ -205,6 +206,8 @@ ddl_statement:
     | alter_table_stmt  { $$ = $1; }
     | create_index_stmt { $$ = $1; }
     | drop_index_stmt   { $$ = $1; }
+    | create_view_stmt  { $$ = $1; }
+    | drop_view_stmt    { $$ = $1; }
     ;
 
 /* CREATE TABLE */
@@ -386,6 +389,39 @@ drop_index_stmt:
         stmt->type = StmtType::DROP_INDEX;
         DropIndexStmt drop_stmt;
         drop_stmt.index_name = *$4;
+        drop_stmt.if_exists = $3;
+        stmt->data = std::move(drop_stmt);
+        delete $4;
+        $$ = stmt;
+    }
+    ;
+
+/* CREATE VIEW */
+create_view_stmt:
+    CREATE VIEW opt_if_not_exists IDENTIFIER AS select_stmt {
+        auto stmt = new Statement();
+        stmt->type = StmtType::CREATE_VIEW;
+        CreateViewStmt create_stmt;
+        create_stmt.view_name = *$4;
+        create_stmt.if_not_exists = $3;
+        // 将 SELECT 语句的原始文本存储为视图定义
+        // 注意：这里我们需要从原始 SQL 中提取，暂时存储空字符串
+        // 实际的视图定义会在执行器中从原始 SQL 提取
+        create_stmt.view_definition = "";
+        stmt->data = std::move(create_stmt);
+        delete $4;
+        delete $6;  // SELECT 语句在这里被删除，定义通过原始 SQL 获取
+        $$ = stmt;
+    }
+    ;
+
+/* DROP VIEW */
+drop_view_stmt:
+    DROP VIEW opt_if_exists IDENTIFIER {
+        auto stmt = new Statement();
+        stmt->type = StmtType::DROP_VIEW;
+        DropViewStmt drop_stmt;
+        drop_stmt.view_name = *$4;
         drop_stmt.if_exists = $3;
         stmt->data = std::move(drop_stmt);
         delete $4;

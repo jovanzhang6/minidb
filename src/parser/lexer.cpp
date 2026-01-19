@@ -83,6 +83,9 @@ std::unordered_map<std::string, TokenType> Lexer::keywords_ = {
     {"VARCHAR", TokenType::TEXT_TYPE},
     {"STRING", TokenType::TEXT_TYPE},
     
+    // 视图
+    {"VIEW", TokenType::VIEW},
+    
     // 约束
     {"PRIMARY", TokenType::PRIMARY},
     {"KEY", TokenType::KEY},

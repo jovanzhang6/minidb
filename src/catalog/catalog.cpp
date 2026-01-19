@@ -137,6 +137,28 @@ IndexInfo IndexInfo::FromRecord(const Record& record) {
 }
 
 // =====================
+// ViewInfo serialization
+// =====================
+
+Record ViewInfo::ToRecord() const {
+    Record record;
+    record.values.push_back(Value(view_id));
+    record.values.push_back(Value(view_name));
+    record.values.push_back(Value(view_definition));
+    return record;
+}
+
+ViewInfo ViewInfo::FromRecord(const Record& record) {
+    ViewInfo info;
+    if (record.values.size() >= 3) {
+        info.view_id = record.values[0].GetInt();
+        info.view_name = record.values[1].GetText();
+        info.view_definition = record.values[2].GetText();
+    }
+    return info;
+}
+
+// =====================
 // Catalog Implementation
 // =====================
 
@@ -154,17 +176,18 @@ ErrorCode Catalog::InitializeNewDatabase() {
     // For a new database, we want to create system tables with fresh B-trees.
     // BTreeTable will allocate its own root page when given INVALID_PAGE_ID.
     // Since pages are allocated sequentially starting from 1, we create the
-    // system tables in order and they'll get pages 1, 2, 3, 4, 5.
+    // system tables in order and they'll get pages 1, 2, 3, 4, 5, 6.
     
-    // Create system B-tree tables (they will allocate pages 1, 2, 3, 4, 5)
+    // Create system B-tree tables (they will allocate pages 1, 2, 3, 4, 5, 6)
     sys_tables_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     sys_columns_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     sys_users_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     sys_privileges_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     sys_indexes_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
+    sys_views_ = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
     
     // Store the actual root page IDs (in case they differ from expected)
-    // For persistence, we rely on the fixed page IDs: 1, 2, 3, 4, 5
+    // For persistence, we rely on the fixed page IDs: 1, 2, 3, 4, 5, 6
     // If allocation gives different IDs, we have a problem with persistence
     
     // Create default root user with password '123456'
@@ -180,6 +203,7 @@ ErrorCode Catalog::LoadExistingDatabase() {
     sys_users_ = std::make_unique<BTreeTable>(bpm_, SYS_USERS_ROOT_PAGE);
     sys_privileges_ = std::make_unique<BTreeTable>(bpm_, SYS_PRIVILEGES_ROOT_PAGE);
     sys_indexes_ = std::make_unique<BTreeTable>(bpm_, SYS_INDEXES_ROOT_PAGE);
+    sys_views_ = std::make_unique<BTreeTable>(bpm_, SYS_VIEWS_ROOT_PAGE);
     
     // Restore next_rowid_ for each system table by finding max rowid
     rowid_t max_rowid_tables = 0;
@@ -239,6 +263,19 @@ ErrorCode Catalog::LoadExistingDatabase() {
         }
     });
     sys_indexes_->SetNextRowId(max_rowid_indexes > 0 ? max_rowid_indexes : 1);
+    
+    // Find max view_id and max rowid for sys_views
+    rowid_t max_rowid_views = 0;
+    sys_views_->Scan([this, &max_rowid_views](rowid_t rowid, const Record& rec) {
+        if (rowid >= max_rowid_views) {
+            max_rowid_views = rowid + 1;
+        }
+        ViewInfo info = ViewInfo::FromRecord(rec);
+        if (info.view_id >= next_view_id_) {
+            next_view_id_ = info.view_id + 1;
+        }
+    });
+    sys_views_->SetNextRowId(max_rowid_views > 0 ? max_rowid_views : 1);
     
     return ErrorCode::SUCCESS;
 }
@@ -966,6 +1003,91 @@ rowid_t Catalog::FindIndexRowId(const std::string& index_name) const {
     sys_indexes_->Scan([&](rowid_t rowid, const Record& rec) {
         IndexInfo info = IndexInfo::FromRecord(rec);
         if (info.index_name == index_name) {
+            found_rowid = rowid;
+        }
+    });
+    
+    return found_rowid;
+}
+
+// =====================
+// View Operations
+// =====================
+
+int64_t Catalog::CreateView(const std::string& view_name, const std::string& definition) {
+    // Check if view already exists
+    if (ViewExists(view_name)) {
+        return static_cast<int64_t>(ErrorCode::DUPLICATE_KEY);
+    }
+    
+    // Check if a table with the same name exists
+    if (TableExists(view_name)) {
+        return static_cast<int64_t>(ErrorCode::DUPLICATE_KEY);
+    }
+    
+    // Create view info
+    ViewInfo view_info;
+    view_info.view_id = next_view_id_++;
+    view_info.view_name = view_name;
+    view_info.view_definition = definition;
+    
+    // Insert into sys_views
+    rowid_t view_rowid = sys_views_->InsertAuto(view_info.ToRecord());
+    if (view_rowid < 0) {
+        return static_cast<int64_t>(ErrorCode::IO_ERROR);
+    }
+    
+    return view_info.view_id;
+}
+
+ErrorCode Catalog::DropView(const std::string& view_name) {
+    rowid_t rowid = FindViewRowId(view_name);
+    if (rowid < 0) {
+        return ErrorCode::TABLE_NOT_FOUND;  // 使用 TABLE_NOT_FOUND 作为 VIEW_NOT_FOUND
+    }
+    
+    // Delete from sys_views
+    if (!sys_views_->Delete(rowid)) {
+        return ErrorCode::IO_ERROR;
+    }
+    
+    return ErrorCode::SUCCESS;
+}
+
+std::optional<ViewInfo> Catalog::GetViewInfo(const std::string& view_name) const {
+    std::optional<ViewInfo> result;
+    
+    sys_views_->Scan([&](rowid_t, const Record& rec) {
+        ViewInfo info = ViewInfo::FromRecord(rec);
+        if (info.view_name == view_name) {
+            result = info;
+        }
+    });
+    
+    return result;
+}
+
+bool Catalog::ViewExists(const std::string& view_name) const {
+    return GetViewInfo(view_name).has_value();
+}
+
+std::vector<std::string> Catalog::GetAllViewNames() const {
+    std::vector<std::string> names;
+    
+    sys_views_->Scan([&](rowid_t, const Record& rec) {
+        ViewInfo info = ViewInfo::FromRecord(rec);
+        names.push_back(info.view_name);
+    });
+    
+    return names;
+}
+
+rowid_t Catalog::FindViewRowId(const std::string& view_name) const {
+    rowid_t found_rowid = -1;
+    
+    sys_views_->Scan([&](rowid_t rowid, const Record& rec) {
+        ViewInfo info = ViewInfo::FromRecord(rec);
+        if (info.view_name == view_name) {
             found_rowid = rowid;
         }
     });

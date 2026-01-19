@@ -1,9 +1,11 @@
 #include "executor/execution_engine.h"
 #include "executor/nested_loop_join.h"
 #include "../btree/btree_index.h"
+#include "../parser/parser.h"
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
 
 namespace minidb {
 
@@ -119,6 +121,12 @@ ExecutionResult ExecutionEngine::Execute(const std::string& sql) {
                 break;
             case StmtType::DROP_INDEX:
                 result = ExecuteDropIndex(stmt->Get<DropIndexStmt>());
+                break;
+            case StmtType::CREATE_VIEW:
+                result = ExecuteCreateView(stmt->Get<CreateViewStmt>(), sql);
+                break;
+            case StmtType::DROP_VIEW:
+                result = ExecuteDropView(stmt->Get<DropViewStmt>());
                 break;
             case StmtType::SELECT:
                 result = ExecuteSelect(stmt->Get<SelectStmt>());
@@ -409,6 +417,7 @@ ExecutionResult ExecutionEngine::ExecuteSelect(const SelectStmt& stmt) {
     }
     
     temporary_exprs_.clear();
+    temporary_view_stmts_.clear();
     
     ExecutorContext ctx(catalog_, bpm_);
     // ctx.txn = current_txn_; // TODO: Add transaction support to ExecutorContext
@@ -470,6 +479,39 @@ std::unique_ptr<Operator> ExecutionEngine::BuildTableRefOperator(const TableRef&
              // However, simple subqueries should work if columns are referenced by name only.
         }
         return sub_plan;
+    }
+
+    // Check if this is a view - if so, expand it
+    auto view_info = catalog_->GetViewInfo(table_ref.table_name);
+    if (view_info) {
+        // Parse the view definition (stored SELECT statement)
+        Parser view_parser;
+        auto view_stmt = view_parser.Parse(view_info->view_definition);
+        
+        if (!view_stmt) {
+            throw std::runtime_error("Failed to parse view definition for view: " + table_ref.table_name + 
+                                     " (definition: " + view_info->view_definition + ")");
+        }
+        
+        if (view_stmt->type != StmtType::SELECT) {
+            throw std::runtime_error("View definition is not a SELECT statement for view: " + table_ref.table_name);
+        }
+        
+        // Store the view statement to keep it alive during execution
+        // This is necessary because FilterOperator holds raw pointers to expressions
+        temporary_view_stmts_.push_back(std::move(view_stmt));
+        const SelectStmt& view_select = temporary_view_stmts_.back()->Get<SelectStmt>();
+        
+        // Recursively build execution plan for the view's SELECT
+        auto view_plan = BuildExecutionPlan(view_select, ctx);
+        
+        // Handle view alias if provided (e.g., SELECT * FROM my_view AS v)
+        // Similar to subquery alias handling
+        if (!table_ref.alias.empty()) {
+            // The alias will be used by upper layers for column resolution
+        }
+        
+        return view_plan;
     }
 
     if (!catalog_->TableExists(table_ref.table_name)) {
@@ -765,10 +807,33 @@ std::unique_ptr<Operator> ExecutionEngine::BuildExecutionPlan(const SelectStmt& 
                  }
                  
                  auto schema = catalog_->GetTableSchema(src->table_name);
+                 bool is_view = false;
+                 
+                 // If not found as table, check if it's a view
+                 if (!schema) {
+                     auto view_info = catalog_->GetViewInfo(src->table_name);
+                     if (view_info) {
+                         is_view = true;
+                         // Parse view definition to get its output schema
+                         Parser vp;
+                         auto vstmt = vp.Parse(view_info->view_definition);
+                         if (vstmt && vstmt->type == StmtType::SELECT) {
+                             const SelectStmt& vsel = vstmt->Get<SelectStmt>();
+                             // Recursively get schema from view's source tables
+                             // For simplicity, we assume view's first FROM table
+                             if (!vsel.from_tables.empty() && !vsel.from_tables[0].subquery) {
+                                 schema = catalog_->GetTableSchema(vsel.from_tables[0].table_name);
+                             }
+                         }
+                     }
+                 }
+                 
                  if (schema) {
                      for (const auto& col : schema->columns) {
                          // Create ColumnRef
-                         std::string ref_table = src->alias.empty() ? src->table_name : src->alias;
+                         // For views, don't specify table name to allow column name matching
+                         // because the actual data comes from underlying tables with different names
+                         std::string ref_table = is_view ? "" : (src->alias.empty() ? src->table_name : src->alias);
                          auto expr = Expression::MakeColumnRef(col.name, ref_table);
                          
                          ProjectionItem proj;
@@ -1130,6 +1195,83 @@ ExecutionResult ExecutionEngine::ExecuteDropIndex(const DropIndexStmt& stmt) {
     } else {
         return ExecutionResult::Fail("Failed to drop index");
     }
+}
+
+// =====================
+// View Operations
+// =====================
+
+ExecutionResult ExecutionEngine::ExecuteCreateView(const CreateViewStmt& stmt, const std::string& original_sql) {
+    // Permission check: DDL requires admin
+    auto perm = CheckDDLPermission();
+    if (!perm.success) return perm;
+    
+    // Check if view already exists
+    if (catalog_->ViewExists(stmt.view_name)) {
+        if (stmt.if_not_exists) {
+            return ExecutionResult::Success("View already exists, skipping");
+        }
+        return ExecutionResult::Fail("View already exists: " + stmt.view_name);
+    }
+    
+    // Check if a table with the same name exists
+    if (catalog_->TableExists(stmt.view_name)) {
+        return ExecutionResult::Fail("A table with this name already exists: " + stmt.view_name);
+    }
+    
+    // Extract the SELECT part from the original SQL
+    // Find "AS" keyword and take everything after it
+    std::string sql_upper = original_sql;
+    for (auto& c : sql_upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    
+    size_t as_pos = sql_upper.find(" AS ");
+    if (as_pos == std::string::npos) {
+        return ExecutionResult::Fail("Invalid CREATE VIEW syntax: missing AS keyword");
+    }
+    
+    std::string view_definition = original_sql.substr(as_pos + 4);
+    // Trim leading/trailing whitespace
+    size_t start = view_definition.find_first_not_of(" \t\n\r");
+    size_t end = view_definition.find_last_not_of(" \t\n\r;");
+    if (start != std::string::npos && end != std::string::npos) {
+        view_definition = view_definition.substr(start, end - start + 1);
+    }
+    
+    // Validate the SELECT statement by parsing it
+    auto select_stmt = parser_.Parse(view_definition);
+    if (!select_stmt || select_stmt->type != StmtType::SELECT) {
+        return ExecutionResult::Fail("Invalid view definition: must be a valid SELECT statement");
+    }
+    
+    // Create the view
+    int64_t view_id = catalog_->CreateView(stmt.view_name, view_definition);
+    if (view_id < 0) {
+        return ExecutionResult::Fail("Failed to create view (ErrorCode: " + std::to_string(view_id) + ")");
+    }
+    
+    return ExecutionResult::Success("View '" + stmt.view_name + "' created successfully");
+}
+
+ExecutionResult ExecutionEngine::ExecuteDropView(const DropViewStmt& stmt) {
+    // Permission check: DDL requires admin
+    auto perm = CheckDDLPermission();
+    if (!perm.success) return perm;
+    
+    // Check if view exists
+    if (!catalog_->ViewExists(stmt.view_name)) {
+        if (stmt.if_exists) {
+            return ExecutionResult::Success("View does not exist, skipping");
+        }
+        return ExecutionResult::Fail("View does not exist: " + stmt.view_name);
+    }
+    
+    // Drop the view
+    ErrorCode result = catalog_->DropView(stmt.view_name);
+    if (result != ErrorCode::SUCCESS) {
+        return ExecutionResult::Fail("Failed to drop view");
+    }
+    
+    return ExecutionResult::Success("View '" + stmt.view_name + "' dropped successfully");
 }
 
 // =====================
