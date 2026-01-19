@@ -14,6 +14,10 @@ if(MSVC)
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG")
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
+    # MinGW: 静态链接 C++ 运行时库，避免 DLL 依赖问题
+    if(MINGW)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static")
+    endif()
 endif()
 
 # 输出目录 - 统一放在 bin 和 lib，不分 Debug/Release 子目录
