@@ -156,7 +156,7 @@ using namespace minidb;
 %type <priv_type> privilege
 %type <priv_list> privilege_list
 
-%type <bool_val> opt_not opt_distinct opt_if_exists opt_if_not_exists opt_null opt_unique
+%type <bool_val> opt_not opt_distinct opt_if_exists opt_if_not_exists opt_null opt_unique opt_primary_key
 
 %type <int_val> opt_limit opt_offset
 
@@ -247,6 +247,7 @@ column_def:
         $$->name = *$1;
         $$->type = $2;
         $$->nullable = $3;
+        $$->primary_key = $4;
         delete $1;
     }
     ;
@@ -258,8 +259,8 @@ opt_null:
     ;
 
 opt_primary_key:
-    /* empty */
-    | PRIMARY KEY
+    /* empty */   { $$ = false; }
+    | PRIMARY KEY { $$ = true; }
     ;
 
 data_type:

@@ -1,5 +1,6 @@
 #include "executor/execution_engine.h"
 #include "executor/nested_loop_join.h"
+#include "../btree/btree_index.h"
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -525,7 +526,7 @@ std::unique_ptr<Operator> ExecutionEngine::BuildExecutionPlan(const SelectStmt& 
                         if (key_type != DataType::INVALID) {
                             // Create BTreeIndex and IndexScan
                             auto btree_table = std::make_unique<BTreeTable>(bpm_, table_info->root_page);
-                            auto btree_index = std::make_unique<BTreeIndex>(bpm_, index_info->root_page, key_type);
+                            auto btree_index = std::make_unique<BTreeIndex>(bpm_, index_info->root_page, key_type, index_info->is_unique);
                             
                             index_scan_op = std::make_unique<IndexScanOperator>(
                                 btree_table.get(),
@@ -811,78 +812,102 @@ ExecutionResult ExecutionEngine::ExecuteInsert(const InsertStmt& stmt) {
     
     auto table = catalog_->GetBTreeTable(stmt.table_name);
     if (txn_mgr_) table->SetTransactionManager(txn_mgr_);
-    auto schema = catalog_->GetTableSchema(stmt.table_name);
+    auto schema_opt = catalog_->GetTableSchema(stmt.table_name);
+    if (!schema_opt) {
+        return ExecutionResult::Fail("Schema not found for table: " + stmt.table_name);
+    }
+    const auto& schema = *schema_opt;
+    
+    // Find primary key column (if any) and its index
+    int pk_column_idx = -1;
+    std::string pk_index_name;
+    for (size_t i = 0; i < schema.columns.size(); ++i) {
+        if (schema.columns[i].primary_key) {
+            pk_column_idx = static_cast<int>(i);
+            pk_index_name = "pk_" + stmt.table_name;
+            break;
+        }
+    }
+    
+    // Get primary key index if exists
+    std::unique_ptr<BTreeIndex> pk_index;
+    if (pk_column_idx >= 0) {
+        auto index_info = catalog_->GetIndexInfo(pk_index_name);
+        if (index_info) {
+            pk_index = std::make_unique<BTreeIndex>(
+                bpm_, index_info->root_page, 
+                schema.columns[pk_column_idx].type, true);
+        }
+    }
+    
+    // Get all non-primary indexes for this table
+    auto table_indexes = catalog_->GetTableIndexes(stmt.table_name);
     
     int count = 0;
     for (const auto& row_values : stmt.values) {
-        if (row_values.size() != schema->columns.size()) {
-             // If stmt.column_names is set, we need mapping. 
-             // Phase 6 parser might just give list of values.
-             // Assuming full row insert for simplicity or standard order.
+        if (row_values.size() != schema.columns.size()) {
              if (stmt.column_names.empty()) {
                  return ExecutionResult::Fail("Column count mismatch");
              }
-             // Handle column mapping... (TODO)
              return ExecutionResult::Fail("Partial column insert not implemented yet");
         }
         
         Record record;
         for (size_t i = 0; i < row_values.size(); ++i) {
-            // Evaluate expression to Value
-            // Evaluation requires a context (Tuple). 
-            // For VALUES(1, 'a'), expressions are Literals.
-            // ExpressionEvaluator::Evaluate(expr, tuple, schema)
-            // But we don't have a tuple yet.
-            // Evaluator should support eval without tuple if expr is constant.
-            // Let's check Evaluator.
-            // EvaluateLiteral doesn't need tuple.
-            
             ExpressionEvaluator evaluator;
             Value val = evaluator.Evaluate(row_values[i].get(), Tuple(), OutputSchema());
             record.values.push_back(val);
         }
         
-        // Insert into table
-        // We typically need an auto-increment ID or key.
-        // Catalog::InsertAuto handles this if we use Catalog API?
-        // Catalog::GetBTreeTable returns the raw table.
-        // RowID management?
-        // BTreeTable::Insert(rowid, record).
-        // Catalog has table-specific NextRowId? No, Catalog tracks `next_table_id_`, `next_user_id_`.
-        // User tables should manage their own RowIDs or use a sequence.
-        // BTreeTable doesn't auto-increment RowID.
-        // We usually pick a RowID.
-        // Check `BTreeTable::Insert`.
-        
-        int64_t rowid = count + 1; // Temporary hack: Should find max rowid or use sequence
-        // Actually Catalog seems to treat system tables with auto-increment (InsertAuto).
-        // Let's see if Catalog exposes `InsertAuto` for user tables? No.
-        // Catalog methods are for system tables.
-        
-        // We need a mechanism to generate RowIDs.
-        // Maybe `table->GetNextRowId()`?
-        // For now, let's use a random or monotonic ID if not provided.
-        // Or if PK is present.
-        
-        // Let's try to insert with simplistic rowid generation (e.g. valid rowid finding).
-        // Since this is a simple DB, maybe `rowid` is just `long` key?
-        // If table has PK, we use PK value as key?
-        // Phase 1-5 definitions of BTree: Insert(key, value).
-        // If it's a Table, key is RowID?
-        
-        // Let's look at `catalog/catalog.cpp`'s `InsertAuto`.
-        // It uses `next_user_id_` etc.
-        
-        // Real implementation should find max key or maintain counter.
-        // For CLI shell, let's just picking a new key is hard without state.
-        // Let's assume the first column is INT PK and use it as key?
-        // If so:
-        int64_t key = record.values[0].GetInt();
-        if (!table->Insert(key, record)) {
-            return ExecutionResult::Fail("Insert failed (Duplicate key?)");
+        // Check primary key uniqueness using index
+        if (pk_index && pk_column_idx >= 0) {
+            const Value& pk_value = record.values[pk_column_idx];
+            if (pk_index->Exists(pk_value)) {
+                return ExecutionResult::Fail("Duplicate primary key value");
+            }
         }
+        
+        // Get next rowid from table
+        rowid_t rowid = table->GetNextRowId();
+        table->SetNextRowId(rowid + 1);
+        
+        // Insert into data table
+        if (!table->Insert(rowid, record)) {
+            return ExecutionResult::Fail("Insert failed");
+        }
+        
+        // Insert into primary key index
+        if (pk_index && pk_column_idx >= 0) {
+            pk_index->Insert(record.values[pk_column_idx], rowid);
+        }
+        
+        // Insert into all secondary indexes
+        for (const auto& idx_info : table_indexes) {
+            if (idx_info.index_name == pk_index_name) continue;  // Skip PK index (already handled)
+            
+            if (idx_info.column_id < static_cast<int32_t>(record.values.size())) {
+                DataType col_type = schema.columns[idx_info.column_id].type;
+                BTreeIndex sec_index(bpm_, idx_info.root_page, col_type, idx_info.is_unique);
+                
+                // Check unique constraint for unique indexes
+                if (idx_info.is_unique && sec_index.Exists(record.values[idx_info.column_id])) {
+                    // Rollback: delete from data table and pk index
+                    table->Delete(rowid);
+                    if (pk_index && pk_column_idx >= 0) {
+                        pk_index->Delete(record.values[pk_column_idx], rowid);
+                    }
+                    return ExecutionResult::Fail("Duplicate value for unique index: " + idx_info.index_name);
+                }
+                
+                sec_index.Insert(record.values[idx_info.column_id], rowid);
+            }
+        }
+        
         count++;
     }
+    
+    // Update next_rowid in catalog
+    catalog_->UpdateTableNextRowId(stmt.table_name, table->GetNextRowId());
     
     return ExecutionResult::Success("Inserted " + std::to_string(count) + " rows");
 }

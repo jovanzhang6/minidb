@@ -4,6 +4,7 @@
  */
 
 #include "catalog.h"
+#include "../btree/btree_index.h"
 #include <algorithm>
 #include <functional>
 
@@ -271,6 +272,10 @@ int64_t Catalog::CreateTable(const std::string& table_name,
         return static_cast<int64_t>(ErrorCode::IO_ERROR);
     }
     
+    // Find primary key column (if any)
+    int32_t pk_column_id = -1;
+    DataType pk_type = DataType::INVALID;
+    
     // Insert columns into sys_columns
     for (size_t i = 0; i < columns.size(); ++i) {
         ColumnInfo col_info;
@@ -282,10 +287,22 @@ int64_t Catalog::CreateTable(const std::string& table_name,
         col_info.is_primary_key = columns[i].primary_key;
         
         sys_columns_->InsertAuto(col_info.ToRecord());
+        
+        // Track primary key column
+        if (columns[i].primary_key) {
+            pk_column_id = col_info.column_id;
+            pk_type = columns[i].type;
+        }
     }
     
     // Store in cache
     table_cache_[table_name] = std::move(btree);
+    
+    // Automatically create unique index for primary key
+    if (pk_column_id >= 0) {
+        std::string pk_index_name = "pk_" + table_name;
+        CreateIndex(pk_index_name, table_name, columns[pk_column_id].name, true);
+    }
     
     return table_info.table_id;
 }
@@ -813,12 +830,14 @@ int64_t Catalog::CreateIndex(const std::string& index_name,
         return static_cast<int64_t>(ErrorCode::TABLE_NOT_FOUND);
     }
     
-    // Find column
+    // Find column and its type
     auto columns = GetTableColumns(table_info->table_id);
     int32_t column_id = -1;
+    DataType column_type = DataType::INVALID;
     for (const auto& col : columns) {
         if (col.column_name == column_name) {
             column_id = col.column_id;
+            column_type = col.data_type;
             break;
         }
     }
@@ -826,9 +845,9 @@ int64_t Catalog::CreateIndex(const std::string& index_name,
         return static_cast<int64_t>(ErrorCode::COLUMN_NOT_FOUND);
     }
     
-    // Create the B-tree for index (allocates a new page)
-    auto btree = std::make_unique<BTreeTable>(bpm_, INVALID_PAGE_ID);
-    page_id_t root_page = btree->GetRootPageId();
+    // Create the BTreeIndex (allocates its own root page)
+    auto index = std::make_unique<BTreeIndex>(bpm_, INVALID_PAGE_ID, column_type, is_unique);
+    page_id_t root_page = index->GetRootPageId();
     
     // Create index info
     IndexInfo index_info;
@@ -850,14 +869,8 @@ int64_t Catalog::CreateIndex(const std::string& index_name,
     if (data_table) {
         data_table->Scan([&](rowid_t rowid, const Record& rec) {
             if (column_id < static_cast<int32_t>(rec.values.size())) {
-                // For index, we store (column_value, rowid) as key
-                // Using rowid as key and column_value + rowid as record
-                // This is simplified: we store in index B-tree: rowid -> column_value
-                // Actual lookup will scan index for matching values
-                Record index_rec;
-                index_rec.values.push_back(rec.values[column_id]);  // indexed column value
-                index_rec.values.push_back(Value(rowid));           // pointer to data row
-                btree->Insert(rowid, index_rec);
+                // Insert (column_value, rowid) into index
+                index->Insert(rec.values[column_id], rowid);
             }
         });
     }
