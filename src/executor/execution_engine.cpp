@@ -1096,7 +1096,12 @@ ExecutionResult ExecutionEngine::ExecuteDelete(const DeleteStmt& stmt) {
         const auto& record = *record_opt;
         rowid_t rid = it.GetRowId();
         
-        Tuple tuple(record.values, rid);
+        // 填充 NULL 到新增列（ALTER TABLE ADD COLUMN 后旧数据可能列数不足）
+        std::vector<Value> values = record.values;
+        while (values.size() < schema.columns.size()) {
+            values.push_back(Value());  // NULL
+        }
+        Tuple tuple(values, rid);
         
         bool matches = true;
         if (stmt.where_clause) {
@@ -1170,7 +1175,13 @@ ExecutionResult ExecutionEngine::ExecuteUpdate(const UpdateStmt& stmt) {
         if (!record_opt) continue;
         const auto& record = *record_opt;
         rowid_t rid = it.GetRowId();
-        Tuple tuple(record.values, rid);
+        
+        // 填充 NULL 到新增列（ALTER TABLE ADD COLUMN 后旧数据可能列数不足）
+        std::vector<Value> values = record.values;
+        while (values.size() < schema.columns.size()) {
+            values.push_back(Value());  // NULL
+        }
+        Tuple tuple(values, rid);
         
         bool matches = true;
         if (stmt.where_clause) {
@@ -1181,7 +1192,8 @@ ExecutionResult ExecutionEngine::ExecuteUpdate(const UpdateStmt& stmt) {
         }
         
         if (matches) {
-            std::vector<Value> new_values = record.values;
+            // 使用已填充的 values 而不是原始 record.values
+            std::vector<Value> new_values = values;
             for (const auto& update : updates_info) {
                 new_values[update.first] = evaluator.Evaluate(update.second, tuple, out_schema);
             }

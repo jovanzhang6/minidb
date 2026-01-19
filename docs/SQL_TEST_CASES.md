@@ -486,7 +486,7 @@ WHERE students.id = scores.sid;
 
 ```sql
 BEGIN;
-INSERT INTO students VALUES (99, 'TempUser', 100);
+INSERT INTO students VALUES (99, 'TempUser', 100, 'email');
 SELECT * FROM students WHERE id = 99;
 ROLLBACK;
 
@@ -499,7 +499,7 @@ SELECT * FROM students WHERE id = 99;
 
 ```sql
 BEGIN;
-INSERT INTO students VALUES (6, 'Frank', 23);
+INSERT INTO students VALUES (6, 'Frank', 23, 'e2');
 INSERT INTO scores VALUES (11, 6, 'Math', 77.0);
 COMMIT;
 
