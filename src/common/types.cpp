@@ -10,8 +10,18 @@
 namespace minidb {
 
 bool Value::operator==(const Value& other) const {
-    if (type_ != other.type_) return false;
     if (IsNull() && other.IsNull()) return true;
+    if (IsNull() || other.IsNull()) return false;
+    
+    // 支持 INT 和 FLOAT 之间的跨类型比较
+    if (type_ == DataType::INT && other.type_ == DataType::FLOAT) {
+        return static_cast<double>(int_val_) == other.float_val_;
+    }
+    if (type_ == DataType::FLOAT && other.type_ == DataType::INT) {
+        return float_val_ == static_cast<double>(other.int_val_);
+    }
+    
+    if (type_ != other.type_) return false;
     
     switch (type_) {
         case DataType::INT:
@@ -29,6 +39,14 @@ bool Value::operator<(const Value& other) const {
     if (IsNull() && !other.IsNull()) return true;
     if (!IsNull() && other.IsNull()) return false;
     if (IsNull() && other.IsNull()) return false;
+    
+    // 支持 INT 和 FLOAT 之间的跨类型比较
+    if (type_ == DataType::INT && other.type_ == DataType::FLOAT) {
+        return static_cast<double>(int_val_) < other.float_val_;
+    }
+    if (type_ == DataType::FLOAT && other.type_ == DataType::INT) {
+        return float_val_ < static_cast<double>(other.int_val_);
+    }
     
     if (type_ != other.type_) {
         return static_cast<int>(type_) < static_cast<int>(other.type_);

@@ -417,6 +417,7 @@ SELECT course, AVG(score) FROM scores GROUP BY course ORDER BY AVG(score) DESC;
 
 -- HAVING 过滤
 SELECT course, AVG(score) FROM scores GROUP BY course HAVING AVG(score) > 80;
+SELECT course, AVG(score) FROM scores GROUP BY course HAVING AVG(score) > 85 ORDER BY AVG(score) ASC;
 SELECT course, COUNT(*) FROM scores GROUP BY course HAVING COUNT(*) > 1;
 SELECT sid, SUM(score) FROM scores GROUP BY sid HAVING SUM(score) > 150;
 ```
@@ -479,27 +480,9 @@ WHERE students.id = scores.sid;
 
 ---
 
-## 8. 子查询
+## 8. 事务控制 (TCL)
 
-```sql
--- WHERE 子查询
-SELECT * FROM students 
-WHERE id IN (SELECT sid FROM scores WHERE course = 'Math');
-
--- 标量子查询
-SELECT * FROM scores 
-WHERE score > (SELECT AVG(score) FROM scores);
-
--- NOT IN 子查询
-SELECT * FROM students 
-WHERE id NOT IN (SELECT sid FROM scores WHERE course = 'English');
-```
-
----
-
-## 9. 事务控制 (TCL)
-
-### 9.1 回滚测试
+### 8.1 回滚测试
 
 ```sql
 BEGIN;
@@ -507,11 +490,12 @@ INSERT INTO students VALUES (99, 'TempUser', 100);
 SELECT * FROM students WHERE id = 99;
 ROLLBACK;
 
+
 -- 验证回滚（应该不存在）
 SELECT * FROM students WHERE id = 99;
 ```
 
-### 9.2 提交测试
+### 8.2 提交测试
 
 ```sql
 BEGIN;
@@ -524,7 +508,7 @@ SELECT * FROM students WHERE id = 6;
 SELECT * FROM scores WHERE sid = 6;
 ```
 
-### 9.3 更新回滚测试
+### 8.3 更新回滚测试
 
 ```sql
 BEGIN;
@@ -538,7 +522,7 @@ SELECT * FROM scores WHERE course = 'Math';
 
 ---
 
-## 10. 备份与恢复
+## 9. 备份与恢复
 
 ```bash
 # 在 Shell 中执行
@@ -552,7 +536,7 @@ Database restored from: test.db.bak
 
 ---
 
-## 11. 综合测试脚本
+## 10. 综合测试脚本
 
 以下是一个完整的端到端测试脚本：
 
@@ -601,20 +585,20 @@ ALTER TABLE students RENAME TO student_info;
 SELECT * FROM student_info;
 ALTER TABLE student_info RENAME TO students;
 
--- 8. 事务测试
+-- 7. 事务测试
 BEGIN;
 INSERT INTO students VALUES (99, 'TempUser', 99);
 ROLLBACK;
 SELECT * FROM students WHERE id = 99;
 
--- 9. 用户权限测试（仅管理员）
+-- 8. 用户权限测试（仅管理员）
 CREATE USER 'testuser' WITH PASSWORD 'test123';
 GRANT SELECT ON students TO 'testuser';
 GRANT ALL ON scores TO 'testuser';
 REVOKE INSERT ON scores FROM 'testuser';
 DROP USER 'testuser';
 
--- 10. 清理
+-- 9. 清理
 DROP TABLE scores;
 DROP TABLE students;
 ```

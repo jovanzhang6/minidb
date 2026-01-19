@@ -148,6 +148,8 @@ using namespace minidb;
 %type <order_item> order_item
 %type <order_list> opt_order_by order_list
 
+%type <expr_list> opt_group_by
+
 %type <update_item> update_item
 %type <update_list> update_list
 
@@ -588,6 +590,13 @@ select_stmt:
         if ($6) {
             select_stmt.where_clause.reset($6);
         }
+        if ($7) {
+            // GROUP BY
+            for (auto* expr : *$7) {
+                select_stmt.group_by.emplace_back(expr);
+            }
+            delete $7;
+        }
         if ($8) {
             select_stmt.having_clause.reset($8);
         }
@@ -732,8 +741,8 @@ join_type:
     ;
 
 opt_group_by:
-    /* empty */
-    | GROUP BY expr_list
+    /* empty */         { $$ = nullptr; }
+    | GROUP BY expr_list { $$ = $3; }
     ;
 
 having_clause:

@@ -46,10 +46,21 @@ Value ExpressionEvaluator::Evaluate(const Expression* expr, const Tuple& tuple,
         case ExprType::BETWEEN:
             return EvaluateBetween(std::get<BetweenExpr>(expr->data), tuple, schema);
             
-        case ExprType::FUNCTION_CALL:
+        case ExprType::FUNCTION_CALL: {
+            // 对于聚合函数，尝试从 schema 中按名称查找结果
+            // 这在 HAVING 子句中很有用，因为聚合结果已经计算完成
+            const auto& func = std::get<FunctionCallExpr>(expr->data);
+            if (func.IsAggregate()) {
+                // 尝试按函数名查找列（如 "COUNT", "AVG", "SUM" 等）
+                int idx = schema.GetColumnIndex(func.func_name, "");
+                if (idx >= 0 && idx < static_cast<int>(tuple.values.size())) {
+                    return tuple.values[idx];
+                }
+            }
             // 普通函数调用（非聚合）
             // TODO: 实现常见函数如 UPPER, LOWER, LENGTH 等
             return Value::Null();
+        }
             
         case ExprType::SUBQUERY:
             // 子查询需要单独执行

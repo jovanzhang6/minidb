@@ -1,5 +1,7 @@
 #include "executor/execution_engine.h"
 #include "executor/nested_loop_join.h"
+#include "executor/sort.h"
+#include "executor/hash_aggregate.h"
 #include "../btree/btree_index.h"
 #include "../parser/parser.h"
 #include <iostream>
@@ -634,9 +636,79 @@ std::unique_ptr<Operator> ExecutionEngine::BuildExecutionPlan(const SelectStmt& 
         }
     }
     
-    // 3. Project (SELECT list)
+    // 3. Check if we need aggregation (GROUP BY or aggregate functions in SELECT)
+    bool has_aggregate = false;
+    std::vector<AggregateItem> aggregates;
+    std::vector<const Expression*> group_by_exprs;
+    
+    // Check for aggregate functions in SELECT list
+    for (const auto& item : stmt.select_list) {
+        if (item.expr && ExpressionUtil::HasAggregate(item.expr.get())) {
+            has_aggregate = true;
+            break;
+        }
+    }
+    
+    // Check for GROUP BY
+    if (!stmt.group_by.empty()) {
+        has_aggregate = true;
+        for (const auto& expr : stmt.group_by) {
+            group_by_exprs.push_back(expr.get());
+        }
+    }
+    
+    // If we have aggregation, build HashAggregateOperator
+    if (has_aggregate) {
+        // Extract aggregate functions from SELECT list
+        for (const auto& item : stmt.select_list) {
+            if (item.expr && item.expr->type == ExprType::FUNCTION_CALL) {
+                const auto& func = std::get<FunctionCallExpr>(item.expr->data);
+                if (func.IsAggregate()) {
+                    AggregateItem agg_item;
+                    agg_item.func = &func;
+                    agg_item.alias = item.alias.empty() ? func.func_name : item.alias;
+                    aggregates.push_back(agg_item);
+                }
+            }
+        }
+        
+        root = std::make_unique<HashAggregateOperator>(
+            std::move(root),
+            std::move(group_by_exprs),
+            std::move(aggregates)
+        );
+        
+        // 4. HAVING filter (after aggregation)
+        if (stmt.having_clause) {
+            root = std::make_unique<FilterOperator>(std::move(root), stmt.having_clause.get());
+        }
+    }
+    
+    // 5. Project (SELECT list)
     std::vector<ProjectionItem> projections;
     
+    // If we have aggregation, the projection is simpler - just map from aggregate output
+    if (has_aggregate) {
+        // For aggregate queries, HashAggregateOperator already produces the right output
+        // Its output schema is: [group_by_cols..., agg_results...]
+        // We can skip projection for simple cases and just use the aggregate output directly
+        
+        // 5. Sort (ORDER BY) for aggregate queries
+        if (!stmt.order_by.empty()) {
+            std::vector<SortKey> sort_keys;
+            for (const auto& order_item : stmt.order_by) {
+                SortKey key;
+                key.expr = order_item.expr.get();
+                key.is_desc = order_item.is_desc;
+                sort_keys.push_back(key);
+            }
+            root = std::make_unique<SortOperator>(std::move(root), std::move(sort_keys));
+        }
+        
+        return root;
+    }
+    
+    // Non-aggregate case: original logic
     for (const auto& item : stmt.select_list) {
         if (item.is_star) {
             // SELECT * or table.*
@@ -861,6 +933,19 @@ std::unique_ptr<Operator> ExecutionEngine::BuildExecutionPlan(const SelectStmt& 
     }
     
     root = std::make_unique<ProjectOperator>(std::move(root), projections);
+    
+    // 4. Sort (ORDER BY)
+    if (!stmt.order_by.empty()) {
+        std::vector<SortKey> sort_keys;
+        for (const auto& order_item : stmt.order_by) {
+            SortKey key;
+            key.expr = order_item.expr.get();
+            key.is_desc = order_item.is_desc;
+            sort_keys.push_back(key);
+        }
+        root = std::make_unique<SortOperator>(std::move(root), std::move(sort_keys));
+    }
+    
     return root;
 }
 
