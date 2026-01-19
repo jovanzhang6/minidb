@@ -134,9 +134,21 @@ if(MSVC)
     )
 endif()
 
-# 主程序
+# 主程序 (命令行版本)
 add_executable(minidb src/shell/main.cpp)
 target_link_libraries(minidb minidb_core minidb_parser minidb_core)
+
+# 网络服务器
+add_executable(minidb-server 
+    src/server/server.cpp
+    src/server/server_main.cpp
+)
+target_link_libraries(minidb-server minidb_core minidb_parser minidb_core)
+
+# Windows 需要链接 ws2_32
+if(WIN32)
+    target_link_libraries(minidb-server ws2_32)
+endif()
 
 # 测试
 enable_testing()
