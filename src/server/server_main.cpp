@@ -33,21 +33,21 @@ void print_banner() {
 }
 
 void print_usage(const char* program) {
-    std::cout << "用法: " << program << " [选项]\n"
-              << "\n选项:\n"
-              << "  --host <host>      监听地址 (默认: 127.0.0.1)\n"
-              << "  --port <port>      监听端口 (默认: 9527)\n"
-              << "  --db <file>        数据库文件 (默认: minidb.db)\n"
-              << "  --max-conn <n>     最大连接数 (默认: 10)\n"
-              << "  --help             显示此帮助信息\n"
-              << "\n示例:\n"
+    std::cout << "Usage: " << program << " [options]\n"
+              << "\nOptions:\n"
+              << "  --host <host>      Listen address (default: 127.0.0.1)\n"
+              << "  --port <port>      Listen port (default: 9527)\n"
+              << "  --db <file>        Database file (default: minidb.db)\n"
+              << "  --max-conn <n>     Max connections (default: 10)\n"
+              << "  --help             Show this help message\n"
+              << "\nExamples:\n"
               << "  " << program << " --db mydata.db --port 9527\n"
               << "  " << program << " --host 0.0.0.0 --port 3306 --db production.db\n"
               << std::endl;
 }
 
 void signal_handler(int signum) {
-    std::cout << "\n收到信号 " << signum << ", 正在关闭服务器..." << std::endl;
+    std::cout << "\nReceived signal " << signum << ", shutting down server..." << std::endl;
     if (g_server) {
         g_server->Stop();
     }
@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--max-conn" && i + 1 < argc) {
             config.max_connections = std::stoi(argv[++i]);
         } else {
-            std::cerr << "未知选项: " << arg << std::endl;
+            std::cerr << "Unknown option: " << arg << std::endl;
             print_usage(argv[0]);
             return 1;
         }
@@ -84,11 +84,11 @@ int main(int argc, char* argv[]) {
     
     print_banner();
     
-    std::cout << "配置:\n"
-              << "  监听地址: " << config.host << "\n"
-              << "  监听端口: " << config.port << "\n"
-              << "  数据库文件: " << config.db_file << "\n"
-              << "  最大连接数: " << config.max_connections << "\n"
+    std::cout << "Configuration:\n"
+              << "  Listen address: " << config.host << "\n"
+              << "  Listen port:    " << config.port << "\n"
+              << "  Database file:  " << config.db_file << "\n"
+              << "  Max connections: " << config.max_connections << "\n"
               << std::endl;
     
     // Setup signal handlers
@@ -100,11 +100,11 @@ int main(int argc, char* argv[]) {
     g_server = &server;
     
     if (!server.Start()) {
-        std::cerr << "服务器启动失败" << std::endl;
+        std::cerr << "Failed to start server" << std::endl;
         return 1;
     }
     
-    std::cout << "\n按 Ctrl+C 停止服务器\n" << std::endl;
+    std::cout << "\nPress Ctrl+C to stop server\n" << std::endl;
     
     // Wait for server to stop
     while (server.IsRunning()) {
